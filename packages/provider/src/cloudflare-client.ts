@@ -30,8 +30,12 @@ const envelopeSchema = z.object({
         message: z.string().optional().default('Unknown Cloudflare API error'),
       }),
     )
-    .default([]),
-  messages: z.array(z.unknown()).default([]),
+    .nullish()
+    .transform((value) => value ?? []),
+  messages: z
+    .array(z.unknown())
+    .nullish()
+    .transform((value) => value ?? []),
   result: z.unknown(),
 });
 
@@ -99,13 +103,17 @@ const workerVersionSchema = z
   .object({
     id: z.string(),
     metadata: z
-      .object({ created_on: z.string().nullish(), hasPreview: z.boolean().nullish() })
+      .object({
+        created_on: z.string().nullish(),
+        hasPreview: z.boolean().nullish(),
+        has_preview: z.boolean().nullish(),
+      })
       .nullish(),
   })
   .transform((version): WorkerVersion => ({
     id: version.id,
     createdOn: version.metadata?.created_on ?? new Date(0).toISOString(),
-    hasPreview: version.metadata?.hasPreview ?? false,
+    hasPreview: version.metadata?.has_preview ?? version.metadata?.hasPreview ?? false,
   }));
 
 export class CloudflareApiError extends Error {

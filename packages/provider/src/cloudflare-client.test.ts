@@ -160,6 +160,39 @@ describe('CloudflareClient', () => {
     expect(fetcher.mock.calls[1]?.[0]).toContain('version_ids=version-id');
   });
 
+  it('accepts successful Cloudflare envelopes with null errors and messages', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          errors: null,
+          messages: null,
+          result: {
+            items: [
+              {
+                id: 'version-id',
+                metadata: {
+                  created_on: '2026-08-13T09:00:20.000Z',
+                  has_preview: true,
+                },
+              },
+            ],
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(client.listWorkerVersions('worker/name')).resolves.toEqual([
+      {
+        id: 'version-id',
+        createdOn: '2026-08-13T09:00:20.000Z',
+        hasPreview: true,
+      },
+    ]);
+  });
+
   it('surfaces Cloudflare error details with the response status', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
