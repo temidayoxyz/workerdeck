@@ -20,7 +20,7 @@ describe('detectFramework', () => {
       packageManager: 'npm',
       ready: true,
       buildCommand: 'npm run build',
-      deployCommand: 'npx wrangler deploy --yes',
+      deployCommand: 'npx wrangler deploy',
     });
   });
 
@@ -30,7 +30,7 @@ describe('detectFramework', () => {
       runtime: 'static',
       ready: true,
       buildCommand: 'echo "No build step required"',
-      deployCommand: 'npx wrangler deploy --assets . --yes',
+      deployCommand: 'npx wrangler deploy --assets .',
     });
   });
 
@@ -44,7 +44,7 @@ describe('detectFramework', () => {
       framework: 'hono',
       packageManager: 'pnpm',
       buildCommand: 'pnpm run build',
-      deployCommand: 'pnpm exec wrangler deploy --yes',
+      deployCommand: 'pnpm exec wrangler deploy',
       ready: false,
     });
   });
@@ -63,7 +63,7 @@ describe('detectFramework', () => {
       framework: 'vite',
       displayName: 'React + Vite',
       buildCommand: 'npm run build',
-      deployCommand: 'npx wrangler deploy --yes',
+      deployCommand: 'npx wrangler deploy',
       ready: true,
     });
   });

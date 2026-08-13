@@ -36,7 +36,7 @@ export function detectFramework(input: FrameworkDetectionInput): FrameworkDetect
   const manager = packageManager(input);
   const buildScript = input.packageJson?.scripts?.build;
   const buildCommand = buildScript ? packageRun(manager, 'build') : '';
-  const deployCommand = `${wrangler(manager)} deploy --yes`;
+  const deployCommand = `${wrangler(manager)} deploy`;
   const hasWranglerConfig = hasFile(input, /(^|\/)wrangler\.(?:jsonc?|toml)$/);
 
   if (hasDependency(input, 'next')) {
@@ -138,7 +138,7 @@ export function detectFramework(input: FrameworkDetectionInput): FrameworkDetect
       buildCommand: noBuildStep,
       outputDirectory: '.',
       runtime: 'static',
-      deployCommand: `${wrangler(manager)} deploy --assets . --yes`,
+      deployCommand: `${wrangler(manager)} deploy --assets .`,
       packageManager: manager,
       ready: true,
       warnings: [],
@@ -153,7 +153,7 @@ export function detectFramework(input: FrameworkDetectionInput): FrameworkDetect
     buildCommand: 'npm run build',
     outputDirectory: null,
     runtime: 'worker',
-    deployCommand: `${wrangler(manager)} deploy --yes`,
+    deployCommand: `${wrangler(manager)} deploy`,
     packageManager: manager,
     ready: false,
     warnings: ['WorkerDeck could not identify a supported Cloudflare deployment shape.'],

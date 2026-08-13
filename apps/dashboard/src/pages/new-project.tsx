@@ -74,7 +74,7 @@ export function NewProjectPage(): React.JSX.Element {
   const [productionBranch, setProductionBranch] = useState('main');
   const [rootDirectory, setRootDirectory] = useState('/');
   const [buildCommand, setBuildCommand] = useState('npm run build');
-  const [deployCommand, setDeployCommand] = useState('npx wrangler deploy --yes');
+  const [deployCommand, setDeployCommand] = useState('npx wrangler deploy');
   const inspectionRequest = useRef(0);
   const navigate = useNavigate();
 

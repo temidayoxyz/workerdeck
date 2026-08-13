@@ -270,6 +270,8 @@ describe('CloudflareClient', () => {
           trigger_uuid: 'production-trigger',
           trigger_name: 'WorkerDeck production',
           external_script_id: 'worker-tag',
+          build_command: 'npm run build',
+          deploy_command: 'npx wrangler deploy',
           branch_includes: ['main'],
           branch_excludes: [],
         }),
@@ -289,7 +291,7 @@ describe('CloudflareClient', () => {
       buildTokenId: 'build-token',
       name: 'WorkerDeck production',
       buildCommand: 'npm run build',
-      deployCommand: 'npx wrangler deploy --name workerdeck-checkout-api',
+      deployCommand: 'npx wrangler deploy',
       rootDirectory: '/',
       branchIncludes: ['main'],
       branchExcludes: [],
@@ -310,6 +312,36 @@ describe('CloudflareClient', () => {
       path_includes: ['*'],
     });
     expect(fetcher.mock.calls[1]?.[1]?.body as string).not.toContain('control-token');
+  });
+
+  it('updates a build trigger without sending unspecified settings', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      response({
+        trigger_uuid: 'production-trigger',
+        trigger_name: 'WorkerDeck production',
+        external_script_id: 'worker-tag',
+        build_command: 'npm run build',
+        deploy_command: 'npx wrangler deploy',
+        branch_includes: ['main'],
+        branch_excludes: [],
+      }),
+    );
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(
+      client.updateBuildTrigger('production-trigger', {
+        deployCommand: 'npx wrangler deploy',
+      }),
+    ).resolves.toMatchObject({
+      id: 'production-trigger',
+      buildCommand: 'npm run build',
+      deployCommand: 'npx wrangler deploy',
+    });
+
+    expect(fetcher.mock.calls[0]?.[1]?.method).toBe('PATCH');
+    expect(JSON.parse(fetcher.mock.calls[0]?.[1]?.body as string)).toEqual({
+      deploy_command: 'npx wrangler deploy',
+    });
   });
 
   it('normalizes paged build log lines without exposing raw provider envelopes', async () => {

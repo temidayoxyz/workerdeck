@@ -564,7 +564,7 @@ export async function inspectGitHubRepository(repositoryId: string): Promise<Rep
       evidence: ['Found the `hono` package.', 'Found a Wrangler configuration.'],
       rootDirectory: '/',
       buildCommand: 'npm run build',
-      deployCommand: 'npx wrangler deploy --yes',
+      deployCommand: 'npx wrangler deploy',
       outputDirectory: null,
       runtime: 'worker',
       packageManager: 'npm',

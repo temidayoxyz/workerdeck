@@ -57,6 +57,7 @@ export interface DeploymentTarget {
 
 export interface BuildSyncTarget {
   projectId: string;
+  framework: Project['framework'];
   productionBranch: string;
   workerName: string;
   workerTag: string;
@@ -593,6 +594,7 @@ export class Repository {
       .prepare(
         `SELECT
           p.id AS project_id,
+          p.framework,
           p.production_branch,
           e.id AS environment_id,
           e.kind AS environment_kind,
@@ -672,6 +674,7 @@ export class Repository {
       .bind(boundedLimit, offset)
       .all<{
         project_id: string;
+        framework: Project['framework'];
         production_branch: string;
         worker_name: string;
         worker_tag: string;
@@ -691,6 +694,7 @@ export class Repository {
       .run();
     return result.results.map((row) => ({
       projectId: row.project_id,
+      framework: row.framework,
       productionBranch: row.production_branch,
       workerName: row.worker_name,
       workerTag: row.worker_tag,

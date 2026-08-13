@@ -16,6 +16,7 @@ import type {
   WorkerSecret,
   RepositoryConnection,
   CreateBuildTriggerInput,
+  UpdateBuildTriggerInput,
   WorkerAnalyticsRow,
   BuildAccountLimits,
 } from './types';
@@ -456,6 +457,8 @@ export class CloudflareClient {
           trigger_uuid: z.string(),
           trigger_name: z.string(),
           external_script_id: z.string(),
+          build_command: z.string().nullish(),
+          deploy_command: z.string().nullish(),
           branch_includes: z.array(z.string()).optional().default([]),
           branch_excludes: z.array(z.string()).optional().default([]),
         })
@@ -463,6 +466,8 @@ export class CloudflareClient {
           id: trigger.trigger_uuid,
           name: trigger.trigger_name,
           workerTag: trigger.external_script_id,
+          buildCommand: trigger.build_command ?? null,
+          deployCommand: trigger.deploy_command ?? null,
           branchIncludes: trigger.branch_includes,
           branchExcludes: trigger.branch_excludes,
         })),
@@ -486,6 +491,46 @@ export class CloudflareClient {
     );
   }
 
+  async updateBuildTrigger(
+    triggerId: string,
+    input: UpdateBuildTriggerInput,
+  ): Promise<BuildTrigger> {
+    const accountId = this.#requireAccountId();
+    return this.#request(
+      `/accounts/${accountId}/builds/triggers/${encodeURIComponent(triggerId)}`,
+      z
+        .object({
+          trigger_uuid: z.string(),
+          trigger_name: z.string(),
+          external_script_id: z.string(),
+          build_command: z.string().nullish(),
+          deploy_command: z.string().nullish(),
+          branch_includes: z.array(z.string()).optional().default([]),
+          branch_excludes: z.array(z.string()).optional().default([]),
+        })
+        .transform((trigger) => ({
+          id: trigger.trigger_uuid,
+          name: trigger.trigger_name,
+          workerTag: trigger.external_script_id,
+          buildCommand: trigger.build_command ?? null,
+          deployCommand: trigger.deploy_command ?? null,
+          branchIncludes: trigger.branch_includes,
+          branchExcludes: trigger.branch_excludes,
+        })),
+      {
+        method: 'PATCH',
+        body: JSON.stringify({
+          ...(input.name === undefined ? {} : { trigger_name: input.name }),
+          ...(input.buildCommand === undefined ? {} : { build_command: input.buildCommand }),
+          ...(input.deployCommand === undefined ? {} : { deploy_command: input.deployCommand }),
+          ...(input.rootDirectory === undefined ? {} : { root_directory: input.rootDirectory }),
+          ...(input.branchIncludes === undefined ? {} : { branch_includes: input.branchIncludes }),
+          ...(input.branchExcludes === undefined ? {} : { branch_excludes: input.branchExcludes }),
+        }),
+      },
+    );
+  }
+
   async deleteBuildTrigger(triggerId: string): Promise<void> {
     const accountId = this.#requireAccountId();
     await this.#request(
@@ -503,6 +548,8 @@ export class CloudflareClient {
           trigger_uuid: z.string(),
           trigger_name: z.string(),
           external_script_id: z.string(),
+          build_command: z.string().nullish(),
+          deploy_command: z.string().nullish(),
           branch_includes: z.array(z.string()).default([]),
           branch_excludes: z.array(z.string()).default([]),
         })
@@ -510,6 +557,8 @@ export class CloudflareClient {
           id: trigger.trigger_uuid,
           name: trigger.trigger_name,
           workerTag: trigger.external_script_id,
+          buildCommand: trigger.build_command ?? null,
+          deployCommand: trigger.deploy_command ?? null,
           branchIncludes: trigger.branch_includes,
           branchExcludes: trigger.branch_excludes,
         })),

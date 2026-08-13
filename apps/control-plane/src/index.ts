@@ -15,6 +15,11 @@ import { CloudflareApiError, CloudflareClient } from '@workerdeck/provider';
 import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { authenticate } from './auth';
+import {
+  managedBuildCommand,
+  managedDeployCommand,
+  workerNameBuildVariable,
+} from './build-commands';
 import { AppError } from './errors';
 import { GitHubAppClient } from './github';
 import { Repository } from './repository';
@@ -568,12 +573,17 @@ app.post('/api/v1/projects', async (context) => {
     });
     let workerCreated = false;
     const triggerIds: string[] = [];
-    const productionDeployCommand = scopedWranglerCommand(
+    const buildCommand = managedBuildCommand(parsed.data.buildCommand, parsed.data.framework);
+    const productionDeployCommand = managedDeployCommand(
       parsed.data.deployCommand,
-      workerName,
       false,
+      parsed.data.framework,
     );
-    const previewDeployCommand = scopedWranglerCommand(parsed.data.deployCommand, workerName, true);
+    const previewDeployCommand = managedDeployCommand(
+      parsed.data.deployCommand,
+      true,
+      parsed.data.framework,
+    );
     try {
       const worker = await client.bootstrapWorker(workerName, '2026-08-12');
       workerCreated = true;
@@ -583,25 +593,37 @@ app.post('/api/v1/projects', async (context) => {
         repositoryConnectionId: connection.id,
         buildTokenId: buildToken.id,
         name: 'WorkerDeck production',
-        buildCommand: parsed.data.buildCommand,
+        buildCommand,
         deployCommand: productionDeployCommand,
         rootDirectory: parsed.data.rootDirectory,
         branchIncludes: [parsed.data.productionBranch],
         branchExcludes: [],
       });
       triggerIds.push(productionTrigger.id);
+      await client.upsertBuildEnvironmentVariable(
+        productionTrigger.id,
+        workerNameBuildVariable,
+        workerName,
+        false,
+      );
       const previewTrigger = await client.createBuildTrigger({
         workerTag: worker.tag,
         repositoryConnectionId: connection.id,
         buildTokenId: buildToken.id,
         name: 'WorkerDeck previews',
-        buildCommand: parsed.data.buildCommand,
+        buildCommand,
         deployCommand: previewDeployCommand,
         rootDirectory: parsed.data.rootDirectory,
         branchIncludes: ['*'],
         branchExcludes: [parsed.data.productionBranch],
       });
       triggerIds.push(previewTrigger.id);
+      await client.upsertBuildEnvironmentVariable(
+        previewTrigger.id,
+        workerNameBuildVariable,
+        workerName,
+        false,
+      );
       const project = await repository.createProject(
         parsed.data,
         context.get('actor'),
@@ -682,13 +704,15 @@ app.get('/api/v1/projects/:projectId/environments/:environmentId/variables', asy
       buildConnected: Boolean(target.buildTriggerId),
       runtimeConnected: Boolean(worker),
       variables: [
-        ...buildVariables.map((variable) => ({
-          key: variable.key,
-          target: 'build' as const,
-          secret: variable.isSecret,
-          value: variable.value,
-          createdAt: variable.createdOn,
-        })),
+        ...buildVariables
+          .filter((variable) => variable.key !== workerNameBuildVariable)
+          .map((variable) => ({
+            key: variable.key,
+            target: 'build' as const,
+            secret: variable.isSecret,
+            value: variable.value,
+            createdAt: variable.createdOn,
+          })),
         ...runtimeSecrets.map((secret) => ({
           key: secret.name,
           target: 'runtime_secret' as const,
@@ -714,6 +738,13 @@ app.put(
         422,
         'INVALID_ENVIRONMENT_VARIABLE',
         'Review the variable name, target, and value.',
+      );
+    }
+    if (key.data === workerNameBuildVariable) {
+      throw new AppError(
+        422,
+        'RESERVED_ENVIRONMENT_VARIABLE',
+        'That build variable is managed by WorkerDeck.',
       );
     }
     const repository = new Repository(context.env.DB);
@@ -785,6 +816,13 @@ app.delete(
         422,
         'INVALID_ENVIRONMENT_VARIABLE',
         'Choose the exact variable and target to remove.',
+      );
+    }
+    if (key.data === workerNameBuildVariable) {
+      throw new AppError(
+        422,
+        'RESERVED_ENVIRONMENT_VARIABLE',
+        'That build variable is managed by WorkerDeck.',
       );
     }
     const repository = new Repository(context.env.DB);
@@ -1147,6 +1185,39 @@ async function syncProviderBuilds(env: AppEnv['Bindings']): Promise<void> {
         client.listWorkerVersions(target.workerName, 20),
         client.listBuildTriggers(target.workerTag),
       ]);
+      await Promise.all(
+        triggers.map(async (trigger) => {
+          const isPreview =
+            trigger.branchIncludes.includes('*') &&
+            trigger.branchExcludes.includes(target.productionBranch);
+          const deployCommand = trigger.deployCommand
+            ? managedDeployCommand(trigger.deployCommand, isPreview, target.framework)
+            : managedDeployCommand('npx wrangler deploy', isPreview, target.framework);
+          const buildCommand = managedBuildCommand(
+            trigger.buildCommand ?? 'npm run build',
+            target.framework,
+          );
+          const variables = await client.listBuildEnvironmentVariables(trigger.id);
+          const workerNameVariable = variables.find(
+            (variable) => variable.key === workerNameBuildVariable,
+          );
+          await Promise.all([
+            ...(workerNameVariable?.value !== target.workerName || workerNameVariable.isSecret
+              ? [
+                  client.upsertBuildEnvironmentVariable(
+                    trigger.id,
+                    workerNameBuildVariable,
+                    target.workerName,
+                    false,
+                  ),
+                ]
+              : []),
+            ...(trigger.deployCommand !== deployCommand || trigger.buildCommand !== buildCommand
+              ? [client.updateBuildTrigger(trigger.id, { buildCommand, deployCommand })]
+              : []),
+          ]);
+        }),
+      );
       if (!target.productionTriggerId) {
         target.productionTriggerId =
           triggers.find((trigger) => trigger.branchIncludes.includes(target.productionBranch))
@@ -1360,17 +1431,6 @@ function githubAppClient(context: Context<AppEnv>): GitHubAppClient {
     );
   }
   return new GitHubAppClient(appId, privateKey);
-}
-
-function scopedWranglerCommand(command: string, workerName: string, preview: boolean): string {
-  if (!/\bwrangler\s+deploy\b/.test(command)) {
-    return preview ? `npx wrangler versions upload --name ${workerName}` : command;
-  }
-  const withoutWorkerName = command.replace(/\s+--name(?:=|\s+)\S+/g, '');
-  const scoped = withoutWorkerName
-    .replace(/\bwrangler\s+deploy\b/, `wrangler ${preview ? 'versions upload' : 'deploy'}`)
-    .replace(preview ? /\s+--yes\b/g : /$^/, '');
-  return `${scoped.trim()} --name ${workerName}`;
 }
 
 async function hashText(value: string): Promise<string> {

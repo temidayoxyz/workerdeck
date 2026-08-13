@@ -17,8 +17,19 @@ export interface BuildTrigger {
   id: string;
   name: string;
   workerTag: string;
+  buildCommand: string | null;
+  deployCommand: string | null;
   branchIncludes: string[];
   branchExcludes: string[];
+}
+
+export interface UpdateBuildTriggerInput {
+  name?: string;
+  buildCommand?: string;
+  deployCommand?: string;
+  rootDirectory?: string;
+  branchIncludes?: string[];
+  branchExcludes?: string[];
 }
 
 export interface RepositoryConnection {
