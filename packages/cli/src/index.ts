@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import * as prompts from '@clack/prompts';
@@ -43,12 +43,12 @@ program
     '--dashboard-origin <origin>',
     'Public WorkerDeck origin, for example https://deck.example.com',
   )
-  .requiredOption(
-    '--build-token-id <id>',
-    'Cloudflare API token ID for the dedicated application build token',
-  )
   .requiredOption('--github-app-id <id>', 'WorkerDeck GitHub App ID')
   .requiredOption('--github-app-slug <slug>', 'WorkerDeck GitHub App URL slug')
+  .requiredOption(
+    '--github-app-private-key-file <path>',
+    'Path to the GitHub App private-key PEM downloaded from GitHub',
+  )
   .option('--worker-name <name>', 'Worker script name', 'workerdeck-control-plane')
   .option('--dry-run', 'Write and print the generated configuration without deploying')
   .action(
@@ -58,17 +58,15 @@ program
       accessTeamDomain: string;
       accessAudience: string;
       dashboardOrigin: string;
-      buildTokenId: string;
       githubAppId: string;
       githubAppSlug: string;
+      githubAppPrivateKeyFile: string;
       workerName: string;
       dryRun?: boolean;
     }) => {
       const root = process.cwd();
       const generatedDirectory = path.join(root, '.wrangler');
       const configPath = path.join(generatedDirectory, 'workerdeck.generated.json');
-      const config = createInstallConfig({ repositoryRoot: root, ...options });
-
       prompts.intro(pc.bgBlue(pc.white(' Install WorkerDeck ')));
       prompts.log.info(
         'WorkerDeck will create one Worker and one D1 database in the selected account.',
@@ -77,13 +75,13 @@ program
         'It will never import or delete pre-existing Cloudflare resources automatically.',
       );
 
-      await mkdir(generatedDirectory, { recursive: true });
-      await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, {
-        encoding: 'utf8',
-        mode: 0o600,
-      });
-
       if (options.dryRun) {
+        const config = createInstallConfig({
+          repositoryRoot: root,
+          ...options,
+          buildTokenId: 'derived-during-production-install',
+        });
+        await writeGeneratedConfig(generatedDirectory, configPath, config);
         prompts.log.info(`Generated ${configPath}`);
         prompts.outro('Dry run complete. No Cloudflare resources were changed.');
         return;
@@ -98,6 +96,19 @@ program
         return;
       }
 
+      const cloudflareApiToken = await requestSecret(
+        'Paste the WorkerDeck control-plane token (input is hidden)',
+      );
+      const cloudflareBuildToken = await requestSecret(
+        'Paste the WorkerDeck application-build token (input is hidden)',
+      );
+      const githubPrivateKey = await readGithubPrivateKey(options.githubAppPrivateKeyFile);
+      const buildTokenId = await verifyCloudflareToken(cloudflareBuildToken);
+      await verifyCloudflareToken(cloudflareApiToken);
+      const config = createInstallConfig({ repositoryRoot: root, ...options, buildTokenId });
+      await writeGeneratedConfig(generatedDirectory, configPath, config);
+      const cloudflareEnvironment = { CLOUDFLARE_API_TOKEN: cloudflareApiToken };
+
       const spinner = prompts.spinner();
       try {
         spinner.start('Building the WorkerDeck dashboard');
@@ -105,40 +116,38 @@ program
         spinner.stop('Dashboard built');
 
         prompts.log.step('Deploying the control plane and automatically provisioning D1');
-        await run(npxCommand, ['wrangler', 'deploy', '--config', configPath], root);
+        await run(npxCommand, ['wrangler', 'deploy', '--config', configPath], root, {
+          env: cloudflareEnvironment,
+        });
 
         prompts.log.step('Applying WorkerDeck database migrations');
         await run(
           npxCommand,
           ['wrangler', 'd1', 'migrations', 'apply', 'DB', '--remote', '--config', configPath],
           root,
+          { env: cloudflareEnvironment },
         );
 
-        prompts.log.warn(
-          'The next prompt stores your scoped Cloudflare API token as an encrypted Worker secret.',
-        );
+        prompts.log.step('Storing encrypted Worker secrets');
         await run(
           npxCommand,
           ['wrangler', 'secret', 'put', 'CLOUDFLARE_API_TOKEN', '--config', configPath],
           root,
+          { env: cloudflareEnvironment, input: cloudflareApiToken },
         );
 
-        prompts.log.warn(
-          'The next prompt stores the dedicated application build token. Use Workers Scripts Edit only; repository builds receive this token, never the control-plane token.',
-        );
         await run(
           npxCommand,
           ['wrangler', 'secret', 'put', 'CLOUDFLARE_BUILD_TOKEN', '--config', configPath],
           root,
+          { env: cloudflareEnvironment, input: cloudflareBuildToken },
         );
 
-        prompts.log.warn(
-          'The next prompt stores the WorkerDeck GitHub App private key. Paste the complete PEM value; Cloudflare encrypts it and WorkerDeck never stores it in D1.',
-        );
         await run(
           npxCommand,
           ['wrangler', 'secret', 'put', 'GITHUB_APP_PRIVATE_KEY', '--config', configPath],
           root,
+          { env: cloudflareEnvironment, input: githubPrivateKey },
         );
 
         prompts.outro(
@@ -158,3 +167,55 @@ program
   );
 
 await program.parseAsync();
+
+async function requestSecret(message: string): Promise<string> {
+  const value = await prompts.password({ message });
+  if (prompts.isCancel(value) || !value.trim()) {
+    prompts.cancel('Installation cancelled. No credential was stored.');
+    process.exit(1);
+  }
+  return value.trim();
+}
+
+async function verifyCloudflareToken(token: string): Promise<string> {
+  const response = await fetch('https://api.cloudflare.com/client/v4/user/tokens/verify', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const payload = (await response.json()) as {
+    success?: boolean;
+    result?: { id?: string; status?: string };
+    errors?: Array<{ message?: string }>;
+  };
+  if (
+    !response.ok ||
+    !payload.success ||
+    payload.result?.status !== 'active' ||
+    !payload.result.id
+  ) {
+    throw new Error(payload.errors?.[0]?.message ?? 'Cloudflare API token verification failed.');
+  }
+  return payload.result.id;
+}
+
+async function readGithubPrivateKey(filePath: string): Promise<string> {
+  const resolvedPath = path.resolve(filePath);
+  const value = (await readFile(resolvedPath, 'utf8')).trim();
+  if (
+    !/^-----BEGIN (?:RSA )?PRIVATE KEY-----[\s\S]+-----END (?:RSA )?PRIVATE KEY-----$/.test(value)
+  ) {
+    throw new Error(`${resolvedPath} is not a valid private-key PEM file.`);
+  }
+  return value;
+}
+
+async function writeGeneratedConfig(
+  directory: string,
+  configPath: string,
+  config: Record<string, unknown>,
+): Promise<void> {
+  await mkdir(directory, { recursive: true });
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, {
+    encoding: 'utf8',
+    mode: 0o600,
+  });
+}

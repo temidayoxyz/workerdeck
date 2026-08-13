@@ -82,8 +82,9 @@ Create a separate token named `WorkerDeck application builds` with:
 | --------------- | ------ |
 | Workers Scripts | Edit   |
 
-Record both the token value and its token ID. Cloudflare Builds stores this token for application
-deployment. WorkerDeck never gives the control-plane token to repository builds.
+Record both token values. The installer verifies the application-build token and derives its
+non-secret token ID automatically. Cloudflare Builds stores this token for application deployment.
+WorkerDeck never gives the control-plane token to repository builds.
 
 ## 4. Authenticate Wrangler
 
@@ -112,9 +113,9 @@ Then run:
 node packages/cli/dist/index.js install \
   --account-id <account-id> \
   --account-name "<account-name>" \
-  --build-token-id <application-build-token-id> \
   --github-app-id <github-app-id> \
   --github-app-slug <github-app-slug> \
+  --github-app-private-key-file /secure/path/to/github-app.private-key.pem \
   --access-team-domain <team.cloudflareaccess.com> \
   --access-audience <application-audience> \
   --dashboard-origin https://deck.example.com
@@ -123,7 +124,8 @@ node packages/cli/dist/index.js install \
 The installer builds the dashboard, attaches the selected Worker Custom Domain, disables alternate
 `workers.dev` and preview URLs, provisions its D1 database, applies all migrations, and prompts
 separately for both token values. Generated account configuration is written beneath ignored
-`.wrangler/` state and must not be committed.
+`.wrangler/` state and must not be committed. Token input is hidden; secret values are verified in
+memory and piped directly to Wrangler without appearing in command-line arguments.
 
 ## 6. Configure the WorkerDeck GitHub App
 
