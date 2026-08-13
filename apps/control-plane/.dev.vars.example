@@ -1,0 +1,6 @@
+# Copy this file to .dev.vars. Never commit .dev.vars.
+CLOUDFLARE_API_TOKEN=
+CLOUDFLARE_ACCOUNT_ID=
+ACCESS_TEAM_DOMAIN=
+ACCESS_AUD=
+

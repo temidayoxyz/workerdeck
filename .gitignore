@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+.wrangler/
+.wrangler-config/
+.dev.vars
+.env
+.env.*
+!.env.example
+.npm-cache/
+.pnpm-store/
+*.log
+.DS_Store
+Thumbs.db
+*.tsbuildinfo

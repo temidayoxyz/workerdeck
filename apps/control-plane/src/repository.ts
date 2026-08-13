@@ -1,0 +1,1103 @@
+import {
+  deploymentSchema,
+  domainSchema,
+  managedResourceSchema,
+  projectSchema,
+  type CreateDeploymentInput,
+  type CreateProjectInput,
+  type DashboardSummary,
+  type Deployment,
+  type Environment,
+  type Project,
+  type ManagedResource,
+  type ResourceKind,
+  type WorkerDomain,
+} from '@workerdeck/contracts';
+import type { WorkerBuild } from '@workerdeck/provider';
+import { AppError } from './errors';
+
+interface ProjectRow {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  repository_url: string | null;
+  repository_owner: string | null;
+  repository_name: string | null;
+  production_branch: string;
+  framework: Project['framework'];
+  status: Project['status'];
+  created_at: string;
+  updated_at: string;
+}
+
+interface EnvironmentRow {
+  id: string;
+  project_id: string;
+  name: string;
+  slug: string;
+  kind: Environment['kind'];
+  worker_name: string | null;
+  worker_tag: string | null;
+  build_trigger_id: string | null;
+  url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DeploymentTarget {
+  projectId: string;
+  environmentId: string;
+  productionBranch: string;
+  workerName: string;
+  workerTag: string | null;
+  buildTriggerId: string | null;
+}
+
+interface DeploymentRow {
+  id: string;
+  project_id: string;
+  environment_id: string;
+  status: Deployment['status'];
+  git_commit_sha: string | null;
+  git_commit_message: string | null;
+  git_branch: string | null;
+  build_id: string | null;
+  worker_version_id: string | null;
+  triggered_by: string;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+}
+
+interface ManagedResourceRow {
+  id: string;
+  project_id: string | null;
+  environment_id: string | null;
+  kind: ResourceKind;
+  cloudflare_id: string;
+  name: string;
+  ownership_tag: string;
+  created_at: string;
+  deleted_at: string | null;
+}
+
+interface GitInstallationRow {
+  id: string;
+  provider: 'github';
+  provider_installation_id: string;
+  account_login: string;
+  account_type: string;
+  created_at: string;
+  updated_at: string;
+}
+
+const toProject = (row: ProjectRow): Project => ({
+  id: row.id,
+  slug: row.slug,
+  name: row.name,
+  description: row.description,
+  repositoryUrl: row.repository_url,
+  repositoryOwner: row.repository_owner,
+  repositoryName: row.repository_name,
+  productionBranch: row.production_branch,
+  framework: row.framework,
+  status: row.status,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+const toEnvironment = (row: EnvironmentRow): Environment => ({
+  id: row.id,
+  projectId: row.project_id,
+  name: row.name,
+  slug: row.slug,
+  kind: row.kind,
+  workerName: row.worker_name,
+  url: row.url,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+const toDeployment = (row: DeploymentRow): Deployment => ({
+  id: row.id,
+  projectId: row.project_id,
+  environmentId: row.environment_id,
+  status: row.status,
+  gitCommitSha: row.git_commit_sha,
+  gitCommitMessage: row.git_commit_message,
+  gitBranch: row.git_branch,
+  buildId: row.build_id,
+  workerVersionId: row.worker_version_id,
+  triggeredBy: row.triggered_by,
+  startedAt: row.started_at,
+  finishedAt: row.finished_at,
+  createdAt: row.created_at,
+});
+
+const toManagedResource = (row: ManagedResourceRow): ManagedResource => ({
+  id: row.id,
+  projectId: row.project_id,
+  environmentId: row.environment_id,
+  kind: row.kind,
+  cloudflareId: row.cloudflare_id,
+  name: row.name,
+  ownershipTag: row.ownership_tag,
+  createdAt: row.created_at,
+  deletedAt: row.deleted_at,
+});
+
+function repositoryParts(repositoryUrl: string): { owner: string | null; name: string | null } {
+  const pathname = new URL(repositoryUrl).pathname.replace(/^\//, '').replace(/\.git$/, '');
+  const [owner, name] = pathname.split('/');
+  return { owner: owner || null, name: name || null };
+}
+
+export class Repository {
+  constructor(private readonly db: D1Database) {}
+
+  async dashboard(account: DashboardSummary['account']): Promise<DashboardSummary> {
+    const [projects, environments, deployments, resourceCounts] = await Promise.all([
+      this.db.prepare('SELECT * FROM projects ORDER BY updated_at DESC LIMIT 50').all<ProjectRow>(),
+      this.db
+        .prepare('SELECT * FROM environments ORDER BY updated_at DESC LIMIT 100')
+        .all<EnvironmentRow>(),
+      this.db
+        .prepare('SELECT * FROM deployments ORDER BY created_at DESC LIMIT 30')
+        .all<DeploymentRow>(),
+      this.db
+        .prepare(
+          'SELECT kind, COUNT(*) AS count FROM managed_resources WHERE deleted_at IS NULL GROUP BY kind',
+        )
+        .all<{ kind: ResourceKind; count: number }>(),
+    ]);
+
+    const counts: DashboardSummary['resourceCounts'] = {
+      worker: 0,
+      d1: 0,
+      kv: 0,
+      r2: 0,
+      domain: 0,
+      queue: 0,
+      workflow: 0,
+    };
+    for (const row of resourceCounts.results) counts[row.kind] = row.count;
+
+    return {
+      projects: projects.results.map(toProject),
+      environments: environments.results.map(toEnvironment),
+      deployments: deployments.results.map(toDeployment),
+      resourceCounts: counts,
+      account,
+    };
+  }
+
+  async listProjects(): Promise<Project[]> {
+    const result = await this.db
+      .prepare('SELECT * FROM projects ORDER BY updated_at DESC')
+      .all<ProjectRow>();
+    return result.results.map(toProject);
+  }
+
+  async findProjectBySlug(slug: string): Promise<Project | null> {
+    const row = await this.db
+      .prepare('SELECT * FROM projects WHERE slug = ?')
+      .bind(slug)
+      .first<ProjectRow>();
+    return row ? toProject(row) : null;
+  }
+
+  async acquireProvisioningLock(input: {
+    scope: string;
+    key: string;
+    actor: string;
+    requestId: string;
+  }): Promise<void> {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 10 * 60 * 1000);
+    try {
+      await this.db.batch([
+        this.db
+          .prepare('DELETE FROM provisioning_locks WHERE expires_at <= ?')
+          .bind(now.toISOString()),
+        this.db
+          .prepare(
+            `INSERT INTO provisioning_locks (
+              scope, lock_key, actor, request_id, created_at, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            input.scope,
+            input.key,
+            input.actor,
+            input.requestId,
+            now.toISOString(),
+            expiresAt.toISOString(),
+          ),
+      ]);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('UNIQUE')) {
+        throw new AppError(
+          409,
+          'PROVISIONING_IN_PROGRESS',
+          'This resource is already being provisioned. Wait for the current operation to finish.',
+        );
+      }
+      throw error;
+    }
+  }
+
+  async releaseProvisioningLock(scope: string, key: string): Promise<void> {
+    await this.db
+      .prepare('DELETE FROM provisioning_locks WHERE scope = ? AND lock_key = ?')
+      .bind(scope, key)
+      .run();
+  }
+
+  async listManagedResources(): Promise<ManagedResource[]> {
+    const result = await this.db
+      .prepare('SELECT * FROM managed_resources WHERE deleted_at IS NULL ORDER BY created_at DESC')
+      .all<ManagedResourceRow>();
+    return result.results.map(toManagedResource);
+  }
+
+  async saveGitHubInstallation(input: {
+    installationId: string;
+    accountLogin: string;
+    accountType: string;
+    actor: string;
+    requestId: string;
+  }): Promise<void> {
+    const now = new Date().toISOString();
+    const id = crypto.randomUUID();
+    await this.db.batch([
+      this.db
+        .prepare(
+          `INSERT INTO git_installations (
+            id, provider, provider_installation_id, account_login, account_type, created_at, updated_at
+          ) VALUES (?, 'github', ?, ?, ?, ?, ?)
+          ON CONFLICT(provider_installation_id) DO UPDATE SET
+            account_login = excluded.account_login,
+            account_type = excluded.account_type,
+            updated_at = excluded.updated_at`,
+        )
+        .bind(id, input.installationId, input.accountLogin, input.accountType, now, now),
+      this.db
+        .prepare(
+          `INSERT INTO audit_events (
+            id, actor, action, target_type, target_id, request_id, metadata_json, created_at
+          ) VALUES (?, ?, 'git_installation.connected', 'git_installation', ?, ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          input.actor,
+          input.installationId,
+          input.requestId,
+          JSON.stringify({ provider: 'github', accountLogin: input.accountLogin }),
+          now,
+        ),
+    ]);
+  }
+
+  async listGitHubInstallations(): Promise<GitInstallationRow[]> {
+    const result = await this.db
+      .prepare("SELECT * FROM git_installations WHERE provider = 'github' ORDER BY updated_at DESC")
+      .all<GitInstallationRow>();
+    return result.results;
+  }
+
+  async createGitSetupState(stateHash: string, actor: string): Promise<void> {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 10 * 60 * 1000);
+    await this.db.batch([
+      this.db.prepare('DELETE FROM git_setup_states WHERE expires_at <= ?').bind(now.toISOString()),
+      this.db
+        .prepare(
+          'INSERT INTO git_setup_states (state_hash, actor, expires_at, created_at) VALUES (?, ?, ?, ?)',
+        )
+        .bind(stateHash, actor, expiresAt.toISOString(), now.toISOString()),
+    ]);
+  }
+
+  async consumeGitSetupState(stateHash: string, actor: string): Promise<void> {
+    const row = await this.db
+      .prepare('SELECT actor, expires_at FROM git_setup_states WHERE state_hash = ?')
+      .bind(stateHash)
+      .first<{ actor: string; expires_at: string }>();
+    if (!row || row.actor !== actor || row.expires_at <= new Date().toISOString()) {
+      throw new AppError(
+        403,
+        'INVALID_GITHUB_SETUP_STATE',
+        'This GitHub installation session is invalid or has expired. Start the connection again.',
+      );
+    }
+    await this.db
+      .prepare('DELETE FROM git_setup_states WHERE state_hash = ?')
+      .bind(stateHash)
+      .run();
+  }
+
+  async recordManagedResource(input: {
+    projectId: string;
+    environmentId: string;
+    kind: 'd1' | 'kv' | 'r2' | 'domain';
+    cloudflareId: string;
+    name: string;
+    actor: string;
+    requestId: string;
+  }): Promise<ManagedResource> {
+    const environment = await this.db
+      .prepare('SELECT id FROM environments WHERE id = ? AND project_id = ?')
+      .bind(input.environmentId, input.projectId)
+      .first<{ id: string }>();
+    if (!environment) {
+      throw new AppError(404, 'ENVIRONMENT_NOT_FOUND', 'The selected environment does not exist.');
+    }
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const ownershipTag = `workerdeck:${input.projectId}:${input.environmentId}:${input.kind}:${id}`;
+    await this.db.batch([
+      this.db
+        .prepare(
+          `INSERT INTO managed_resources (
+            id, project_id, environment_id, kind, cloudflare_id, name, ownership_tag,
+            configuration_json, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, '{}', ?)`,
+        )
+        .bind(
+          id,
+          input.projectId,
+          input.environmentId,
+          input.kind,
+          input.cloudflareId,
+          input.name,
+          ownershipTag,
+          now,
+        ),
+      this.db
+        .prepare(
+          `INSERT INTO audit_events (
+            id, actor, action, target_type, target_id, request_id, metadata_json, created_at
+          ) VALUES (?, ?, 'resource.created', 'managed_resource', ?, ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          input.actor,
+          id,
+          input.requestId,
+          JSON.stringify({ kind: input.kind, name: input.name }),
+          now,
+        ),
+    ]);
+    const row = await this.db
+      .prepare('SELECT * FROM managed_resources WHERE id = ?')
+      .bind(id)
+      .first<ManagedResourceRow>();
+    if (!row) {
+      throw new AppError(500, 'RESOURCE_RECORD_FAILED', 'The resource ownership record was lost.');
+    }
+    return toManagedResource(row);
+  }
+
+  async createProject(
+    input: CreateProjectInput,
+    actor: string,
+    requestId: string,
+    buildTarget?: { workerTag: string; buildTriggerId: string },
+  ): Promise<Project> {
+    const now = new Date().toISOString();
+    const projectId = crypto.randomUUID();
+    const environmentId = crypto.randomUUID();
+    const auditId = crypto.randomUUID();
+    const repository = repositoryParts(input.repositoryUrl);
+
+    try {
+      await this.db.batch([
+        this.db
+          .prepare(
+            `INSERT INTO projects (
+              id, slug, name, description, repository_url, repository_owner, repository_name,
+              production_branch, framework, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+          )
+          .bind(
+            projectId,
+            input.slug,
+            input.name,
+            input.description ?? null,
+            input.repositoryUrl,
+            repository.owner,
+            repository.name,
+            input.productionBranch,
+            input.framework,
+            now,
+            now,
+          ),
+        this.db
+          .prepare(
+            `INSERT INTO environments (
+              id, project_id, name, slug, kind, worker_name, worker_tag, build_trigger_id,
+              created_at, updated_at
+            ) VALUES (?, ?, 'Production', 'production', 'production', ?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            environmentId,
+            projectId,
+            `workerdeck-${input.slug}`,
+            buildTarget?.workerTag ?? null,
+            buildTarget?.buildTriggerId ?? null,
+            now,
+            now,
+          ),
+        ...(buildTarget
+          ? [
+              this.db
+                .prepare(
+                  `INSERT INTO managed_resources (
+                    id, project_id, environment_id, kind, cloudflare_id, name, ownership_tag,
+                    configuration_json, created_at
+                  ) VALUES (?, ?, ?, 'worker', ?, ?, ?, ?, ?)`,
+                )
+                .bind(
+                  crypto.randomUUID(),
+                  projectId,
+                  environmentId,
+                  `workerdeck-${input.slug}`,
+                  `workerdeck-${input.slug}`,
+                  `workerdeck:${projectId}:${environmentId}:worker`,
+                  JSON.stringify({ managed: true, source: 'github' }),
+                  now,
+                ),
+            ]
+          : []),
+        this.db
+          .prepare(
+            `INSERT INTO audit_events (
+              id, actor, action, target_type, target_id, request_id, metadata_json, created_at
+            ) VALUES (?, ?, 'project.created', 'project', ?, ?, ?, ?)`,
+          )
+          .bind(auditId, actor, projectId, requestId, JSON.stringify({ slug: input.slug }), now),
+      ]);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('UNIQUE')) {
+        throw new AppError(409, 'PROJECT_SLUG_EXISTS', 'A project already uses this slug.');
+      }
+      throw error;
+    }
+
+    const row = await this.db
+      .prepare('SELECT * FROM projects WHERE id = ?')
+      .bind(projectId)
+      .first<ProjectRow>();
+    if (!row)
+      throw new AppError(
+        500,
+        'PROJECT_CREATE_FAILED',
+        'The project could not be read after creation.',
+      );
+    return toProject(row);
+  }
+
+  async createDeployment(
+    projectId: string,
+    input: CreateDeploymentInput,
+    actor: string,
+    requestId: string,
+  ): Promise<Deployment> {
+    const environment = await this.db
+      .prepare('SELECT * FROM environments WHERE id = ? AND project_id = ?')
+      .bind(input.environmentId, projectId)
+      .first<EnvironmentRow>();
+    if (!environment) {
+      throw new AppError(404, 'ENVIRONMENT_NOT_FOUND', 'The selected environment does not exist.');
+    }
+
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    try {
+      await this.db.batch([
+        this.db
+          .prepare(
+            `INSERT INTO deployments (
+              id, project_id, environment_id, status, git_commit_sha, git_branch, triggered_by, created_at
+            ) VALUES (?, ?, ?, 'queued', ?, ?, ?, ?)`,
+          )
+          .bind(
+            id,
+            projectId,
+            input.environmentId,
+            input.commitSha ?? null,
+            input.branch ?? null,
+            actor,
+            now,
+          ),
+        this.db
+          .prepare(
+            `INSERT INTO audit_events (
+              id, actor, action, target_type, target_id, request_id, metadata_json, created_at
+            ) VALUES (?, ?, 'deployment.queued', 'deployment', ?, ?, ?, ?)`,
+          )
+          .bind(crypto.randomUUID(), actor, id, requestId, JSON.stringify({ projectId }), now),
+      ]);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('UNIQUE')) {
+        throw new AppError(
+          409,
+          'DEPLOYMENT_ALREADY_ACTIVE',
+          'Wait for the active deployment in this environment to finish.',
+        );
+      }
+      throw error;
+    }
+
+    const row = await this.db
+      .prepare('SELECT * FROM deployments WHERE id = ?')
+      .bind(id)
+      .first<DeploymentRow>();
+    if (!row)
+      throw new AppError(500, 'DEPLOYMENT_CREATE_FAILED', 'The deployment could not be queued.');
+    return toDeployment(row);
+  }
+
+  async getDeploymentTarget(projectId: string, environmentId: string): Promise<DeploymentTarget> {
+    const row = await this.db
+      .prepare(
+        `SELECT
+          p.id AS project_id,
+          p.production_branch,
+          e.id AS environment_id,
+          e.worker_name,
+          e.worker_tag,
+          e.build_trigger_id
+        FROM projects p
+        JOIN environments e ON e.project_id = p.id
+        WHERE p.id = ? AND e.id = ?`,
+      )
+      .bind(projectId, environmentId)
+      .first<{
+        project_id: string;
+        environment_id: string;
+        production_branch: string;
+        worker_name: string | null;
+        worker_tag: string | null;
+        build_trigger_id: string | null;
+      }>();
+    if (!row) {
+      throw new AppError(404, 'ENVIRONMENT_NOT_FOUND', 'The selected environment does not exist.');
+    }
+    if (!row.worker_name) {
+      throw new AppError(
+        409,
+        'BUILD_TARGET_NOT_CONFIGURED',
+        'Connect this environment to a Cloudflare Worker before deploying.',
+      );
+    }
+    return {
+      projectId: row.project_id,
+      environmentId: row.environment_id,
+      productionBranch: row.production_branch,
+      workerName: row.worker_name,
+      workerTag: row.worker_tag,
+      buildTriggerId: row.build_trigger_id,
+    };
+  }
+
+  async saveBuildTarget(
+    environmentId: string,
+    workerTag: string,
+    buildTriggerId: string,
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db
+      .prepare(
+        `UPDATE environments
+         SET worker_tag = ?, build_trigger_id = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(workerTag, buildTriggerId, now, environmentId)
+      .run();
+  }
+
+  async recordEnvironmentVariableAudit(input: {
+    action: 'created' | 'updated' | 'deleted';
+    projectId: string;
+    environmentId: string;
+    key: string;
+    target: 'build' | 'runtime_secret';
+    secret: boolean;
+    actor: string;
+    requestId: string;
+  }): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db
+      .prepare(
+        `INSERT INTO audit_events (
+          id, actor, action, target_type, target_id, request_id, metadata_json, created_at
+        ) VALUES (?, ?, ?, 'environment', ?, ?, ?, ?)`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        input.actor,
+        `environment_variable.${input.action}`,
+        input.environmentId,
+        input.requestId,
+        JSON.stringify({
+          projectId: input.projectId,
+          key: input.key,
+          target: input.target,
+          secret: input.secret,
+        }),
+        now,
+      )
+      .run();
+  }
+
+  async attachBuild(deploymentId: string, build: WorkerBuild): Promise<Deployment> {
+    const now = new Date().toISOString();
+    await this.db
+      .prepare(
+        `UPDATE deployments
+         SET status = 'building', build_id = ?, started_at = ?,
+             git_commit_sha = COALESCE(?, git_commit_sha),
+             git_commit_message = COALESCE(?, git_commit_message),
+             git_branch = COALESCE(?, git_branch)
+         WHERE id = ? AND status = 'queued'`,
+      )
+      .bind(
+        build.id,
+        build.startedOn ?? now,
+        build.commitSha,
+        build.commitMessage,
+        build.branch,
+        deploymentId,
+      )
+      .run();
+    return this.requireDeployment(deploymentId);
+  }
+
+  async failDeployment(
+    deploymentId: string,
+    errorCode: string,
+    actor: string,
+    requestId: string,
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db.batch([
+      this.db
+        .prepare("UPDATE deployments SET status = 'failed', finished_at = ? WHERE id = ?")
+        .bind(now, deploymentId),
+      this.db
+        .prepare(
+          `INSERT INTO audit_events (
+            id, actor, action, target_type, target_id, request_id, metadata_json, created_at
+          ) VALUES (?, ?, 'deployment.failed', 'deployment', ?, ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          actor,
+          deploymentId,
+          requestId,
+          JSON.stringify({ errorCode }),
+          now,
+        ),
+    ]);
+  }
+
+  async reconcileBuild(
+    deploymentId: string,
+    build: WorkerBuild,
+    workerVersionId: string | null,
+    actor: string,
+    requestId: string,
+  ): Promise<Deployment> {
+    const current = await this.requireDeployment(deploymentId);
+    if (['ready', 'failed', 'cancelled', 'rolled_back'].includes(current.status)) return current;
+
+    const terminal = build.status === 'stopped';
+    const status: Deployment['status'] = !terminal
+      ? 'building'
+      : build.outcome === 'success'
+        ? workerVersionId
+          ? 'ready'
+          : 'deploying'
+        : build.outcome === 'cancelled' || build.outcome === 'terminated'
+          ? 'cancelled'
+          : 'failed';
+    if (
+      current.status === status &&
+      (!workerVersionId || current.workerVersionId === workerVersionId)
+    ) {
+      return current;
+    }
+    const now = new Date().toISOString();
+    await this.db.batch([
+      this.db
+        .prepare(
+          `UPDATE deployments
+           SET status = ?, worker_version_id = COALESCE(?, worker_version_id),
+               git_commit_sha = COALESCE(?, git_commit_sha),
+               git_commit_message = COALESCE(?, git_commit_message),
+               git_branch = COALESCE(?, git_branch),
+               started_at = COALESCE(started_at, ?),
+               finished_at = ?
+           WHERE id = ?`,
+        )
+        .bind(
+          status,
+          workerVersionId,
+          build.commitSha,
+          build.commitMessage,
+          build.branch,
+          build.startedOn ?? now,
+          terminal && status !== 'deploying' ? (build.stoppedOn ?? now) : null,
+          deploymentId,
+        ),
+      this.db
+        .prepare(
+          `INSERT INTO audit_events (
+            id, actor, action, target_type, target_id, request_id, metadata_json, created_at
+          ) VALUES (?, ?, ?, 'deployment', ?, ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          actor,
+          `deployment.${status}`,
+          deploymentId,
+          requestId,
+          JSON.stringify({ buildId: build.id, outcome: build.outcome }),
+          now,
+        ),
+    ]);
+    return this.requireDeployment(deploymentId);
+  }
+
+  async cancelDeployment(
+    deploymentId: string,
+    actor: string,
+    requestId: string,
+  ): Promise<Deployment> {
+    const deployment = await this.requireDeployment(deploymentId);
+    if (!['queued', 'building', 'deploying'].includes(deployment.status)) {
+      throw new AppError(409, 'DEPLOYMENT_NOT_CANCELLABLE', 'This deployment is already complete.');
+    }
+    const now = new Date().toISOString();
+    await this.db.batch([
+      this.db
+        .prepare("UPDATE deployments SET status = 'cancelled', finished_at = ? WHERE id = ?")
+        .bind(now, deploymentId),
+      this.db
+        .prepare(
+          `INSERT INTO audit_events (
+            id, actor, action, target_type, target_id, request_id, metadata_json, created_at
+          ) VALUES (?, ?, 'deployment.cancelled', 'deployment', ?, ?, '{}', ?)`,
+        )
+        .bind(crypto.randomUUID(), actor, deploymentId, requestId, now),
+    ]);
+    return this.requireDeployment(deploymentId);
+  }
+
+  async recordRollback(target: Deployment, actor: string, requestId: string): Promise<Deployment> {
+    const current = await this.db
+      .prepare(
+        `SELECT * FROM deployments
+         WHERE environment_id = ? AND status IN ('ready', 'rolled_back')
+         ORDER BY created_at DESC LIMIT 1`,
+      )
+      .bind(target.environmentId)
+      .first<DeploymentRow>();
+    if (current?.worker_version_id === target.workerVersionId) {
+      throw new AppError(409, 'VERSION_ALREADY_ACTIVE', 'This Worker version is already active.');
+    }
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await this.db.batch([
+      this.db
+        .prepare(
+          `INSERT INTO deployments (
+            id, project_id, environment_id, status, git_commit_sha, git_commit_message,
+            git_branch, worker_version_id, triggered_by, started_at, finished_at, created_at
+          ) VALUES (?, ?, ?, 'rolled_back', ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          id,
+          target.projectId,
+          target.environmentId,
+          target.gitCommitSha,
+          `Rollback to ${target.gitCommitMessage ?? target.workerVersionId ?? 'previous version'}`,
+          target.gitBranch,
+          target.workerVersionId,
+          actor,
+          now,
+          now,
+          now,
+        ),
+      this.db
+        .prepare(
+          `INSERT INTO audit_events (
+            id, actor, action, target_type, target_id, request_id, metadata_json, created_at
+          ) VALUES (?, ?, 'deployment.rolled_back', 'deployment', ?, ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          actor,
+          id,
+          requestId,
+          JSON.stringify({
+            targetDeploymentId: target.id,
+            workerVersionId: target.workerVersionId,
+          }),
+          now,
+        ),
+    ]);
+    return this.requireDeployment(id);
+  }
+
+  async requireDeployment(deploymentId: string): Promise<Deployment> {
+    const row = await this.db
+      .prepare('SELECT * FROM deployments WHERE id = ?')
+      .bind(deploymentId)
+      .first<DeploymentRow>();
+    if (!row) throw new AppError(404, 'DEPLOYMENT_NOT_FOUND', 'The deployment does not exist.');
+    return toDeployment(row);
+  }
+
+  async getIdempotentDeployment(
+    key: string,
+    actor: string,
+    requestHash: string,
+  ): Promise<Deployment | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT actor, request_hash, response_json, status_code, expires_at
+         FROM idempotency_keys WHERE key = ?`,
+      )
+      .bind(key)
+      .first<{
+        actor: string;
+        request_hash: string;
+        response_json: string;
+        status_code: number;
+        expires_at: string;
+      }>();
+    if (!row || row.expires_at <= new Date().toISOString()) return null;
+    if (row.actor !== actor || row.request_hash !== requestHash) {
+      throw new AppError(
+        409,
+        'IDEMPOTENCY_KEY_REUSED',
+        'Use a new idempotency key for a different deployment request.',
+      );
+    }
+    if (row.status_code === 102) {
+      throw new AppError(
+        409,
+        'IDEMPOTENT_REQUEST_IN_PROGRESS',
+        'This deployment request is already in progress.',
+      );
+    }
+    return deploymentSchema.parse(JSON.parse(row.response_json));
+  }
+
+  async getIdempotentResource(
+    key: string,
+    actor: string,
+    requestHash: string,
+  ): Promise<ManagedResource | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT actor, request_hash, response_json, status_code, expires_at
+         FROM idempotency_keys WHERE key = ?`,
+      )
+      .bind(key)
+      .first<{
+        actor: string;
+        request_hash: string;
+        response_json: string;
+        status_code: number;
+        expires_at: string;
+      }>();
+    if (!row || row.expires_at <= new Date().toISOString()) return null;
+    if (row.actor !== actor || row.request_hash !== requestHash) {
+      throw new AppError(
+        409,
+        'IDEMPOTENCY_KEY_REUSED',
+        'Use a new idempotency key for a different resource request.',
+      );
+    }
+    if (row.status_code === 102) {
+      throw new AppError(
+        409,
+        'IDEMPOTENT_REQUEST_IN_PROGRESS',
+        'This resource request is already in progress.',
+      );
+    }
+    return managedResourceSchema.parse(JSON.parse(row.response_json));
+  }
+
+  async getIdempotentProject(
+    key: string,
+    actor: string,
+    requestHash: string,
+  ): Promise<Project | null> {
+    return this.getIdempotentValue(key, actor, requestHash, projectSchema, 'project');
+  }
+
+  async getIdempotentDomain(
+    key: string,
+    actor: string,
+    requestHash: string,
+  ): Promise<WorkerDomain | null> {
+    return this.getIdempotentValue(key, actor, requestHash, domainSchema, 'domain');
+  }
+
+  private async getIdempotentValue<T>(
+    key: string,
+    actor: string,
+    requestHash: string,
+    schema: { parse(value: unknown): T },
+    label: string,
+  ): Promise<T | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT actor, request_hash, response_json, status_code, expires_at
+         FROM idempotency_keys WHERE key = ?`,
+      )
+      .bind(key)
+      .first<{
+        actor: string;
+        request_hash: string;
+        response_json: string;
+        status_code: number;
+        expires_at: string;
+      }>();
+    if (!row || row.expires_at <= new Date().toISOString()) return null;
+    if (row.actor !== actor || row.request_hash !== requestHash) {
+      throw new AppError(
+        409,
+        'IDEMPOTENCY_KEY_REUSED',
+        `Use a new idempotency key for a different ${label} request.`,
+      );
+    }
+    if (row.status_code === 102) {
+      throw new AppError(
+        409,
+        'IDEMPOTENT_REQUEST_IN_PROGRESS',
+        `This ${label} request is already in progress.`,
+      );
+    }
+    return schema.parse(JSON.parse(row.response_json));
+  }
+
+  async reserveIdempotencyKey(key: string, actor: string, requestHash: string): Promise<void> {
+    const createdAt = new Date();
+    const expiresAt = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000);
+    try {
+      await this.db
+        .prepare(
+          `INSERT INTO idempotency_keys (
+            key, actor, request_hash, response_json, status_code, created_at, expires_at
+          ) VALUES (?, ?, ?, '', 102, ?, ?)`,
+        )
+        .bind(key, actor, requestHash, createdAt.toISOString(), expiresAt.toISOString())
+        .run();
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('UNIQUE')) {
+        throw new AppError(
+          409,
+          'IDEMPOTENT_REQUEST_IN_PROGRESS',
+          'This request is already in progress.',
+        );
+      }
+      throw error;
+    }
+  }
+
+  async storeIdempotentDeployment(
+    key: string,
+    actor: string,
+    requestHash: string,
+    deployment: Deployment,
+  ): Promise<void> {
+    const createdAt = new Date();
+    const expiresAt = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000);
+    await this.db
+      .prepare(
+        `INSERT INTO idempotency_keys (
+          key, actor, request_hash, response_json, status_code, created_at, expires_at
+        ) VALUES (?, ?, ?, ?, 202, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+          response_json = excluded.response_json,
+          status_code = excluded.status_code`,
+      )
+      .bind(
+        key,
+        actor,
+        requestHash,
+        JSON.stringify(deployment),
+        createdAt.toISOString(),
+        expiresAt.toISOString(),
+      )
+      .run();
+  }
+
+  async storeIdempotentResource(
+    key: string,
+    actor: string,
+    requestHash: string,
+    resource: ManagedResource,
+  ): Promise<void> {
+    const createdAt = new Date();
+    const expiresAt = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000);
+    await this.db
+      .prepare(
+        `INSERT INTO idempotency_keys (
+          key, actor, request_hash, response_json, status_code, created_at, expires_at
+        ) VALUES (?, ?, ?, ?, 201, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+          response_json = excluded.response_json,
+          status_code = excluded.status_code`,
+      )
+      .bind(
+        key,
+        actor,
+        requestHash,
+        JSON.stringify(resource),
+        createdAt.toISOString(),
+        expiresAt.toISOString(),
+      )
+      .run();
+  }
+
+  async storeIdempotentValue(
+    key: string,
+    actor: string,
+    requestHash: string,
+    value: unknown,
+    statusCode = 201,
+  ): Promise<void> {
+    const createdAt = new Date();
+    const expiresAt = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000);
+    await this.db
+      .prepare(
+        `INSERT INTO idempotency_keys (
+          key, actor, request_hash, response_json, status_code, created_at, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+          response_json = excluded.response_json,
+          status_code = excluded.status_code`,
+      )
+      .bind(
+        key,
+        actor,
+        requestHash,
+        JSON.stringify(value),
+        statusCode,
+        createdAt.toISOString(),
+        expiresAt.toISOString(),
+      )
+      .run();
+  }
+
+  async removeIdempotencyKey(key: string): Promise<void> {
+    await this.db.prepare('DELETE FROM idempotency_keys WHERE key = ?').bind(key).run();
+  }
+}

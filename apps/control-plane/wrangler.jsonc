@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "workerdeck-control-plane",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-12",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+  },
+  "vars": {
+    "ENVIRONMENT": "development",
+    "AUTH_MODE": "development",
+    "DASHBOARD_ORIGIN": "http://127.0.0.1:5173",
+    "CLOUDFLARE_ACCOUNT_NAME": "Local Cloudflare",
+    "CLOUDFLARE_BUILD_TOKEN_ID": "replace-with-the-dedicated-build-token-id",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "workerdeck",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "../dashboard/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true,
+  },
+}

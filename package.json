@@ -1,0 +1,36 @@
+{
+  "name": "workerdeck",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The self-hosted application control plane for Cloudflare.",
+  "license": "Apache-2.0",
+  "packageManager": "npm@11.6.2",
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^24.0.0",
+    "esbuild": "0.28.2",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "build": "npm run build -w @workerdeck/dashboard && npm run build -w @workerdeck/contracts && npm run build -w @workerdeck/provider && npm run build -w @workerdeck/cli && npm run build -w @workerdeck/control-plane",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build",
+    "dev": "npm run dev -w @workerdeck/dashboard",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}
