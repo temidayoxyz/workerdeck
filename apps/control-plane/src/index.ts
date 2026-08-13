@@ -1181,9 +1181,9 @@ async function syncProviderBuilds(env: AppEnv['Bindings']): Promise<void> {
   const results = await Promise.allSettled(
     targets.map(async (target) => {
       const [builds, versions, triggers] = await Promise.all([
-        client.listBuilds(target.workerTag, 50),
-        client.listWorkerVersions(target.workerName, 20),
-        client.listBuildTriggers(target.workerTag),
+        providerSyncStep('list builds', client.listBuilds(target.workerTag, 50)),
+        providerSyncStep('list Worker versions', client.listWorkerVersions(target.workerName, 20)),
+        providerSyncStep('list build triggers', client.listBuildTriggers(target.workerTag)),
       ]);
       await Promise.all(
         triggers.map(async (trigger) => {
@@ -1278,7 +1278,7 @@ async function syncProviderBuilds(env: AppEnv['Bindings']): Promise<void> {
     if (!target) return [];
     const message =
       result.reason instanceof CloudflareApiError
-        ? `Cloudflare API ${result.reason.status}`
+        ? `Cloudflare API ${result.reason.status}: ${result.reason.message}`
         : result.reason instanceof Error
           ? result.reason.name
           : 'Unknown provider error';
@@ -1298,6 +1298,17 @@ async function syncProviderBuilds(env: AppEnv['Bindings']): Promise<void> {
     targetCount: targets.length,
     failures,
   });
+}
+
+async function providerSyncStep<T>(step: string, promise: Promise<T>): Promise<T> {
+  try {
+    return await promise;
+  } catch (error) {
+    if (error instanceof CloudflareApiError) {
+      throw new CloudflareApiError(`${step}: ${error.message}`, error.status, error.errors);
+    }
+    throw error;
+  }
 }
 
 function cloudflareClient(context: Context<AppEnv>): CloudflareClient {
