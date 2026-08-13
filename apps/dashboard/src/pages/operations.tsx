@@ -28,6 +28,7 @@ import {
   isDemoMode,
 } from '../lib/api';
 import { relativeTime } from '../lib/format';
+import { projectReleaseState } from '../lib/project-release';
 
 export function DomainsPage({ summary }: { summary: DashboardSummary | null }): React.JSX.Element {
   const rows = summary?.environments.filter((environment) => environment.url) ?? [];
@@ -57,6 +58,13 @@ export function DomainsPage({ summary }: { summary: DashboardSummary | null }): 
           </div>
           {rows.map((environment) => {
             const project = summary?.projects.find((item) => item.id === environment.projectId);
+            const release = project
+              ? projectReleaseState(
+                  project.id,
+                  summary?.environments ?? [],
+                  summary?.deployments ?? [],
+                )
+              : null;
             return (
               <div className="data-row" key={environment.id}>
                 <strong>{new URL(environment.url ?? '').hostname}</strong>
@@ -65,8 +73,8 @@ export function DomainsPage({ summary }: { summary: DashboardSummary | null }): 
                 <span>
                   <LockKeyhole size={14} /> Auto-managed
                 </span>
-                <span className="healthy-label">
-                  <i /> Active
+                <span className={`healthy-label health-badge--${release?.tone ?? 'inactive'}`}>
+                  <i /> {release?.label ?? 'Unknown'}
                 </span>
               </div>
             );
@@ -157,6 +165,11 @@ export function ObservabilityPage({
             (item) => item.workerName === workerName,
           );
           const degraded = Boolean(projectAnalytics?.errors);
+          const release = projectReleaseState(
+            project.id,
+            summary.environments,
+            summary.deployments,
+          );
           return (
             <div key={project.id}>
               <span>
@@ -166,9 +179,7 @@ export function ObservabilityPage({
               <small>
                 {projectAnalytics
                   ? `${degraded ? 'Needs attention' : 'Healthy'} · ${formatNumber(projectAnalytics.requests)} requests`
-                  : project.status === 'active'
-                    ? 'Awaiting traffic'
-                    : `Project ${project.status}`}
+                  : release.label}
               </small>
             </div>
           );

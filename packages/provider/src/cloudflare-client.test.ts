@@ -9,6 +9,14 @@ const response = (result: unknown, init: ResponseInit = {}) =>
   });
 
 describe('CloudflareClient', () => {
+  it('reads the account Workers subdomain used for canonical Worker URLs', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response({ subdomain: 'temidayoxyz' }));
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(client.getWorkersSubdomain()).resolves.toBe('temidayoxyz');
+    expect(fetcher.mock.calls[0]?.[0]).toContain('/accounts/account/workers/subdomain');
+  });
+
   it('unwraps the Workers deployments collection', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       response({

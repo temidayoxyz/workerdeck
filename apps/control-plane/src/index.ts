@@ -579,6 +579,16 @@ app.post('/api/v1/projects', async (context) => {
   if (existingProject) {
     throw new AppError(409, 'PROJECT_SLUG_EXISTS', 'A project already uses this slug.');
   }
+  const existingRepositoryProject = await repository.findProjectByRepository(
+    parsed.data.repositoryUrl,
+  );
+  if (existingRepositoryProject) {
+    throw new AppError(
+      409,
+      'PROJECT_REPOSITORY_EXISTS',
+      `This repository is already connected to ${existingRepositoryProject.name}.`,
+    );
+  }
   await repository.reserveIdempotencyKey(idempotencyKey, context.get('actor'), requestHash);
   if (!parsed.data.repositoryProvider) {
     try {
@@ -602,8 +612,8 @@ app.post('/api/v1/projects', async (context) => {
 
   try {
     await repository.acquireProvisioningLock({
-      scope: 'project',
-      key: parsed.data.slug,
+      scope: 'repository',
+      key: `${parsed.data.repositoryProviderAccountId}:${parsed.data.repositoryId}`,
       actor: context.get('actor'),
       requestId: context.get('requestId'),
     });
@@ -671,6 +681,7 @@ app.post('/api/v1/projects', async (context) => {
       const worker = await client.bootstrapWorker(workerName, '2026-08-12');
       workerCreated = true;
       await client.enableWorkerSubdomain(workerName);
+      const workersSubdomain = await client.getWorkersSubdomain();
       const productionTrigger = await client.createBuildTrigger({
         workerTag: worker.tag,
         repositoryConnectionId: connection.id,
@@ -715,6 +726,7 @@ app.post('/api/v1/projects', async (context) => {
           workerTag: worker.tag,
           buildTriggerId: productionTrigger.id,
           previewBuildTriggerId: previewTrigger.id,
+          workerUrl: `https://${workerName}.${workersSubdomain}.workers.dev`,
         },
       );
       try {
@@ -769,7 +781,10 @@ app.post('/api/v1/projects', async (context) => {
       throw error;
     }
   } finally {
-    await repository.releaseProvisioningLock('project', parsed.data.slug);
+    await repository.releaseProvisioningLock(
+      'repository',
+      `${parsed.data.repositoryProviderAccountId}:${parsed.data.repositoryId}`,
+    );
   }
 });
 
@@ -1312,8 +1327,16 @@ async function syncProviderBuilds(env: AppEnv['Bindings']): Promise<void> {
     token: env.CLOUDFLARE_API_TOKEN,
     accountId: env.CLOUDFLARE_ACCOUNT_ID,
   });
+  const workersSubdomain = await providerSyncStep(
+    'read Workers subdomain',
+    client.getWorkersSubdomain(),
+  );
   const results = await Promise.allSettled(
     targets.map(async (target) => {
+      await repository.saveEnvironmentUrl(
+        target.productionEnvironmentId,
+        `https://${target.workerName}.${workersSubdomain}.workers.dev`,
+      );
       const [builds, versions, triggers] = await Promise.all([
         providerSyncStep('list builds', client.listBuilds(target.workerTag, 50)),
         providerSyncStep('list Worker versions', client.listWorkerVersions(target.workerName, 20)),

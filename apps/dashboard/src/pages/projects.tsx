@@ -3,6 +3,7 @@ import { AlertCircle, Github, Rocket } from '../components/icon';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { relativeTime, titleCase } from '../lib/format';
+import { projectReleaseState } from '../lib/project-release';
 
 export function ProjectsPage({
   summary,
@@ -51,79 +52,88 @@ export function ProjectsPage({
           />
         </div>
         <div className="project-catalog">
-          {projects.map((project) => (
-            <article className="project-card" key={project.id}>
-              <div className="project-card-top">
-                <span className="project-monogram">{project.name.slice(0, 2).toUpperCase()}</span>
-                <span className={`project-health project-health--${project.status}`}>
-                  {titleCase(project.status)}
-                </span>
-              </div>
-              <div>
-                <h2>
-                  <Link to={`/projects/${project.id}`}>{project.name}</Link>
-                </h2>
-                <p>{project.description ?? 'No description provided.'}</p>
-              </div>
-              <div className="project-card-meta">
-                <span>
-                  <Github size={14} />
-                  {project.repositoryOwner}/{project.repositoryName}
-                </span>
-                <span>{titleCase(project.framework)}</span>
-              </div>
-              <div className="project-card-footer">
-                <span>Updated {relativeTime(project.updatedAt)}</span>
-                <button
-                  className="project-deploy"
-                  type="button"
-                  disabled={
-                    deployingProject === project.id ||
-                    Boolean(
-                      summary?.deployments.some(
-                        (deployment) =>
-                          deployment.projectId === project.id &&
-                          ['queued', 'building', 'deploying'].includes(deployment.status),
-                      ),
-                    )
-                  }
-                  onClick={() => {
-                    const environment = summary?.environments.find(
-                      (candidate) =>
-                        candidate.projectId === project.id && candidate.kind === 'production',
-                    );
-                    if (!environment) {
-                      setDeployError(`${project.name} does not have a production environment.`);
-                      return;
+          {projects.map((project) => {
+            const release = projectReleaseState(
+              project.id,
+              summary?.environments ?? [],
+              summary?.deployments ?? [],
+            );
+            return (
+              <article className="project-card" key={project.id}>
+                <div className="project-card-top">
+                  <span className="project-monogram">{project.name.slice(0, 2).toUpperCase()}</span>
+                  <span className={`project-health project-health--${release.tone}`}>
+                    {release.label}
+                  </span>
+                </div>
+                <div>
+                  <h2>
+                    <Link to={`/projects/${project.id}`}>{project.name}</Link>
+                  </h2>
+                  <p>{project.description ?? 'No description provided.'}</p>
+                </div>
+                <div className="project-card-meta">
+                  <span>
+                    <Github size={14} />
+                    {project.repositoryOwner}/{project.repositoryName}
+                  </span>
+                  <span>{titleCase(project.framework)}</span>
+                </div>
+                <div className="project-card-footer">
+                  <span>Updated {relativeTime(project.updatedAt)}</span>
+                  <button
+                    className="project-deploy"
+                    type="button"
+                    disabled={
+                      deployingProject === project.id ||
+                      Boolean(
+                        summary?.deployments.some(
+                          (deployment) =>
+                            deployment.projectId === project.id &&
+                            ['queued', 'building', 'deploying'].includes(deployment.status),
+                        ),
+                      )
                     }
-                    setDeployingProject(project.id);
-                    setDeployError(null);
-                    void onDeploy(project.id, environment.id)
-                      .catch((error: unknown) => {
-                        setDeployError(
-                          error instanceof Error
-                            ? error.message
-                            : 'The deployment could not start.',
-                        );
-                      })
-                      .finally(() => setDeployingProject(null));
-                  }}
-                >
-                  <Rocket size={13} />
-                  {deployingProject === project.id ||
-                  summary?.deployments.some(
-                    (deployment) =>
-                      deployment.projectId === project.id &&
-                      ['queued', 'building', 'deploying'].includes(deployment.status),
-                  )
-                    ? 'Deploying…'
-                    : summary?.deployments.some((deployment) => deployment.projectId === project.id)
-                      ? 'Redeploy'
-                      : 'Deploy'}
-                </button>
-              </div>
-            </article>
-          ))}
+                    onClick={() => {
+                      const environment = summary?.environments.find(
+                        (candidate) =>
+                          candidate.projectId === project.id && candidate.kind === 'production',
+                      );
+                      if (!environment) {
+                        setDeployError(`${project.name} does not have a production environment.`);
+                        return;
+                      }
+                      setDeployingProject(project.id);
+                      setDeployError(null);
+                      void onDeploy(project.id, environment.id)
+                        .catch((error: unknown) => {
+                          setDeployError(
+                            error instanceof Error
+                              ? error.message
+                              : 'The deployment could not start.',
+                          );
+                        })
+                        .finally(() => setDeployingProject(null));
+                    }}
+                  >
+                    <Rocket size={13} />
+                    {deployingProject === project.id ||
+                    summary?.deployments.some(
+                      (deployment) =>
+                        deployment.projectId === project.id &&
+                        ['queued', 'building', 'deploying'].includes(deployment.status),
+                    )
+                      ? 'Deploying…'
+                      : summary?.deployments.some(
+                            (deployment) => deployment.projectId === project.id,
+                          )
+                        ? 'Redeploy'
+                        : 'Deploy'}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </div>
       </section>
     </div>

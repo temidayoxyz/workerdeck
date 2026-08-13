@@ -45,6 +45,7 @@ import {
   upsertEnvironmentVariable,
 } from '../lib/api';
 import { relativeTime, shortSha, titleCase } from '../lib/format';
+import { projectReleaseState } from '../lib/project-release';
 
 export function ProjectPage({
   summary,
@@ -736,6 +737,9 @@ export function ProjectDomainsPage({
   const environment = summary?.environments.find(
     (candidate) => candidate.projectId === projectId && candidate.kind === 'production',
   );
+  const release = project
+    ? projectReleaseState(project.id, summary?.environments ?? [], summary?.deployments ?? [])
+    : null;
   const [domains, setDomains] = useState<WorkerDomain[]>([]);
   const [hostname, setHostname] = useState('');
   const [domainError, setDomainError] = useState<string | null>(null);
@@ -806,17 +810,15 @@ export function ProjectDomainsPage({
         <section className="panel domain-project-card">
           <div className="section-heading">
             <h2>System domain</h2>
-            <span className="healthy-label">
-              <i /> Active
+            <span className={`healthy-label health-badge--${release?.tone ?? 'inactive'}`}>
+              <i /> {release?.label ?? 'Not deployed'}
             </span>
           </div>
           <div className="domain-route-row">
             <Globe2 size={21} />
             <span>
               <strong>
-                {environment?.url
-                  ? new URL(environment.url).hostname
-                  : `${project.slug}.workers.dev`}
+                {environment?.url ? new URL(environment.url).hostname : 'Not assigned yet'}
               </strong>
               <small>Cloudflare-managed hostname and TLS</small>
             </span>

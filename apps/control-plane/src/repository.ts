@@ -25,6 +25,7 @@ interface ProjectRow {
   repository_url: string | null;
   repository_owner: string | null;
   repository_name: string | null;
+  repository_key: string | null;
   production_branch: string;
   framework: Project['framework'];
   status: Project['status'];
@@ -179,6 +180,16 @@ function repositoryParts(repositoryUrl: string): { owner: string | null; name: s
   return { owner: owner || null, name: name || null };
 }
 
+export function canonicalRepositoryKey(repositoryUrl: string): string {
+  const url = new URL(repositoryUrl);
+  const hostname = url.hostname.toLowerCase().replace(/^www\./, '');
+  const pathname = url.pathname
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/\.git$/i, '')
+    .toLowerCase();
+  return `${hostname}:${pathname}`;
+}
+
 export class Repository {
   constructor(private readonly db: D1Database) {}
 
@@ -229,6 +240,21 @@ export class Repository {
     const row = await this.db
       .prepare('SELECT * FROM projects WHERE slug = ?')
       .bind(slug)
+      .first<ProjectRow>();
+    return row ? toProject(row) : null;
+  }
+
+  async findProjectByRepository(repositoryUrl: string): Promise<Project | null> {
+    const parts = repositoryParts(repositoryUrl);
+    const row = await this.db
+      .prepare(
+        `SELECT * FROM projects
+         WHERE repository_key = ?
+            OR (lower(repository_owner) = lower(?) AND lower(repository_name) = lower(?))
+         ORDER BY created_at DESC
+         LIMIT 1`,
+      )
+      .bind(canonicalRepositoryKey(repositoryUrl), parts.owner, parts.name)
       .first<ProjectRow>();
     return row ? toProject(row) : null;
   }
@@ -560,7 +586,12 @@ export class Repository {
     input: CreateProjectInput,
     actor: string,
     requestId: string,
-    buildTarget?: { workerTag: string; buildTriggerId: string; previewBuildTriggerId: string },
+    buildTarget?: {
+      workerTag: string;
+      buildTriggerId: string;
+      previewBuildTriggerId: string;
+      workerUrl: string;
+    },
   ): Promise<CreatedProject> {
     const now = new Date().toISOString();
     const projectId = crypto.randomUUID();
@@ -576,8 +607,8 @@ export class Repository {
           .prepare(
             `INSERT INTO projects (
               id, slug, name, description, repository_url, repository_owner, repository_name,
-              production_branch, framework, status, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+              production_branch, framework, repository_key, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
           )
           .bind(
             projectId,
@@ -589,15 +620,16 @@ export class Repository {
             repository.name,
             input.productionBranch,
             input.framework,
+            canonicalRepositoryKey(input.repositoryUrl),
             now,
             now,
           ),
         this.db
           .prepare(
             `INSERT INTO environments (
-              id, project_id, name, slug, kind, worker_name, worker_tag, build_trigger_id,
+              id, project_id, name, slug, kind, worker_name, worker_tag, build_trigger_id, url,
               created_at, updated_at
-            ) VALUES (?, ?, 'Production', 'production', 'production', ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, 'Production', 'production', 'production', ?, ?, ?, ?, ?, ?)`,
           )
           .bind(
             environmentId,
@@ -605,15 +637,16 @@ export class Repository {
             `workerdeck-${input.slug}`,
             buildTarget?.workerTag ?? null,
             buildTarget?.buildTriggerId ?? null,
+            buildTarget?.workerUrl ?? null,
             now,
             now,
           ),
         this.db
           .prepare(
             `INSERT INTO environments (
-              id, project_id, name, slug, kind, worker_name, worker_tag, build_trigger_id,
+              id, project_id, name, slug, kind, worker_name, worker_tag, build_trigger_id, url,
               created_at, updated_at
-            ) VALUES (?, ?, 'Preview', 'preview', 'preview', ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, 'Preview', 'preview', 'preview', ?, ?, ?, NULL, ?, ?)`,
           )
           .bind(
             previewEnvironmentId,
@@ -684,6 +717,14 @@ export class Repository {
       ]);
     } catch (error) {
       if (error instanceof Error && error.message.includes('UNIQUE')) {
+        const duplicateRepository = await this.findProjectByRepository(input.repositoryUrl);
+        if (duplicateRepository) {
+          throw new AppError(
+            409,
+            'PROJECT_REPOSITORY_EXISTS',
+            `The repository is already connected to ${duplicateRepository.name}.`,
+          );
+        }
         throw new AppError(409, 'PROJECT_SLUG_EXISTS', 'A project already uses this slug.');
       }
       throw error;
@@ -1056,6 +1097,18 @@ export class Repository {
          WHERE id = ?`,
       )
       .bind(workerTag, buildTriggerId, now, environmentId)
+      .run();
+  }
+
+  async saveEnvironmentUrl(environmentId: string, url: string): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db
+      .prepare(
+        `UPDATE environments
+         SET url = ?, updated_at = ?
+         WHERE id = ? AND (url IS NULL OR url != ?)`,
+      )
+      .bind(url, now, environmentId, url)
       .run();
   }
 

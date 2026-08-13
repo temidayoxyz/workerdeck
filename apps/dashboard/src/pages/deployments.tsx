@@ -61,7 +61,9 @@ export function DeploymentsPage({
                 <small>
                   <GitCommitHorizontal size={13} />
                   <code>{shortSha(deployment.gitCommitSha)}</code>
-                  {deployment.gitCommitMessage ?? 'Manual deployment'}
+                  <span className="history-commit-message">
+                    {deployment.gitCommitMessage ?? 'Manual deployment'}
+                  </span>
                 </small>
               </span>
               <span>

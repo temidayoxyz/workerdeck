@@ -8,11 +8,13 @@ import {
   GitCommitHorizontal,
   Plus,
   RefreshCw,
+  Rocket,
 } from '../components/icon';
 import { Link, useNavigate } from 'react-router-dom';
 import { DeploymentRail } from '../components/deployment-rail';
 import { DeploymentStatus } from '../components/status';
 import { relativeTime, shortSha, titleCase } from '../lib/format';
+import { projectReleaseState } from '../lib/project-release';
 
 interface OverviewPageProps {
   summary: DashboardSummary | null;
@@ -56,9 +58,10 @@ export function OverviewPage({
   if (!summary) return <></>;
 
   const latest = summary.deployments[0];
-  const readyCount = summary.deployments.filter(
-    (deployment) => deployment.status === 'ready',
-  ).length;
+  const liveCount = summary.projects.filter((project) => {
+    const state = projectReleaseState(project.id, summary.environments, summary.deployments);
+    return state.label === 'Live' || state.label.startsWith('Live ·');
+  }).length;
   const resourceTotal = Object.values(summary.resourceCounts).reduce(
     (total, count) => total + count,
     0,
@@ -87,9 +90,9 @@ export function OverviewPage({
           <small>managed applications</small>
         </div>
         <div>
-          <span>Healthy releases</span>
-          <strong>{readyCount}</strong>
-          <small>recent deployments</small>
+          <span>Live applications</span>
+          <strong>{liveCount}</strong>
+          <small>serving production traffic</small>
         </div>
         <div>
           <span>Resources</span>
@@ -139,9 +142,20 @@ export function OverviewPage({
                 </div>
               </>
             ) : (
-              <p className="muted-copy">
-                The first deployment rail will appear here after you import a repository.
-              </p>
+              <div className="panel-empty-state panel-empty-state--deployment">
+                <span className="panel-empty-icon">
+                  <Rocket size={20} />
+                </span>
+                <div>
+                  <strong>Ready for a first release</strong>
+                  <p>
+                    Deploy an imported project to create its production Worker and release rail.
+                  </p>
+                </div>
+                <Link className="button button--secondary" to="/projects">
+                  Choose a project <ArrowRight size={15} />
+                </Link>
+              </div>
             )}
           </section>
 
@@ -212,12 +226,12 @@ export function OverviewPage({
                 <span>Framework</span>
                 <span>Production</span>
                 <span>Updated</span>
-                <span />
               </div>
               {summary.projects.map((project) => {
-                const environment = summary.environments.find(
-                  (candidate) =>
-                    candidate.projectId === project.id && candidate.kind === 'production',
+                const release = projectReleaseState(
+                  project.id,
+                  summary.environments,
+                  summary.deployments,
                 );
                 return (
                   <div className="project-row" role="row" key={project.id}>
@@ -226,7 +240,9 @@ export function OverviewPage({
                         {project.name.slice(0, 2).toUpperCase()}
                       </span>
                       <span>
-                        <strong>{project.name}</strong>
+                        <strong>
+                          <Link to={`/projects/${project.id}`}>{project.name}</Link>
+                        </strong>
                         <small>
                           {project.repositoryOwner}/{project.repositoryName}
                         </small>
@@ -236,25 +252,18 @@ export function OverviewPage({
                       <span className="framework-label">{titleCase(project.framework)}</span>
                     </span>
                     <span className="production-link">
-                      {environment?.url ? (
+                      {release.label === 'Live' ? (
                         <>
                           <span className="live-dot" />
                           Live
                         </>
                       ) : (
-                        <span className="muted-copy">Not deployed</span>
+                        <span className={`release-copy release-copy--${release.tone}`}>
+                          {release.label}
+                        </span>
                       )}
                     </span>
                     <span className="muted-copy">{relativeTime(project.updatedAt)}</span>
-                    <span>
-                      <Link
-                        className="row-action"
-                        to={`/projects/${project.id}`}
-                        aria-label={`Open ${project.name}`}
-                      >
-                        <ArrowRight size={16} />
-                      </Link>
-                    </span>
                   </div>
                 );
               })}
@@ -285,7 +294,15 @@ export function OverviewPage({
                 </div>
               ))}
               {summary.deployments.length === 0 ? (
-                <p className="muted-copy">No deployment activity yet.</p>
+                <div className="panel-empty-state panel-empty-state--compact">
+                  <span className="panel-empty-icon">
+                    <GitCommitHorizontal size={18} />
+                  </span>
+                  <div>
+                    <strong>No release activity</strong>
+                    <p>Builds and Git commits will appear here.</p>
+                  </div>
+                </div>
               ) : null}
             </div>
           </section>

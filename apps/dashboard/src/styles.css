@@ -839,20 +839,21 @@ select:focus-visible {
 .project-row {
   display: grid;
   min-height: 61px;
-  grid-template-columns:
-    minmax(220px, 1.5fr) minmax(90px, 0.6fr) minmax(90px, 0.55fr) minmax(90px, 0.55fr)
-    34px;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 0.45fr) minmax(0, 0.95fr) minmax(0, 0.6fr);
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   padding: 0 18px;
   border-bottom: 1px solid var(--line-soft);
   font-size: 9px;
+}
+.project-row > span {
+  min-width: 0;
 }
 .project-row:last-child {
   border-bottom: 0;
 }
 .project-row--header {
-  min-height: 33px;
+  min-height: 40px;
   color: var(--ink-faint);
   background: var(--surface-soft);
   font:
@@ -891,6 +892,14 @@ select:focus-visible {
 .project-name strong {
   font-size: 10px;
 }
+.project-name strong a {
+  color: var(--ink);
+  text-decoration: none;
+}
+.project-name strong a:hover,
+.project-name strong a:focus-visible {
+  color: var(--orange);
+}
 .project-name small {
   margin-top: 3px;
   color: var(--ink-faint);
@@ -915,6 +924,57 @@ select:focus-visible {
   height: 6px;
   background: var(--green);
   border-radius: 50%;
+}
+.release-copy--failed {
+  color: var(--red);
+}
+.release-copy--progress {
+  color: var(--orange);
+}
+.release-copy--inactive {
+  color: var(--ink-faint);
+}
+.panel-empty-state {
+  display: grid;
+  min-height: 176px;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 24px;
+  background: linear-gradient(90deg, var(--orange-soft), transparent 34%), var(--surface);
+}
+.panel-empty-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  color: var(--orange);
+  background: var(--orange-soft);
+  border: 1px solid rgb(255 107 0 / 20%);
+  border-radius: 8px;
+}
+.panel-empty-state strong,
+.panel-empty-state p {
+  display: block;
+}
+.panel-empty-state strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+.panel-empty-state p {
+  max-width: 520px;
+  margin: 4px 0 0;
+  color: var(--ink-soft);
+}
+.panel-empty-state--compact {
+  min-height: 132px;
+  grid-template-columns: 38px minmax(0, 1fr);
+  padding: 20px;
+  background: var(--surface);
+}
+.panel-empty-state--compact .panel-empty-icon {
+  width: 38px;
+  height: 38px;
 }
 .row-action,
 .icon-button {
@@ -1011,8 +1071,8 @@ select:focus-visible {
 .project-catalog {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 1px;
-  background: var(--line-soft);
+  gap: 0;
+  background: transparent;
 }
 .project-card {
   display: flex;
@@ -1020,6 +1080,8 @@ select:focus-visible {
   flex-direction: column;
   padding: 20px;
   background: var(--surface);
+  border-right: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
 }
 .project-card-top,
 .project-card-footer,
@@ -1032,11 +1094,20 @@ select:focus-visible {
   color: var(--ink-soft);
   font-size: 8px;
 }
-.project-health--active {
+.project-health--live {
   color: var(--green);
 }
-.project-health--error {
+.project-health--failed,
+.health-badge--failed {
   color: var(--red);
+}
+.project-health--progress,
+.health-badge--progress {
+  color: var(--orange);
+}
+.project-health--inactive,
+.health-badge--inactive {
+  color: var(--ink-soft);
 }
 .project-card > div:nth-child(2) {
   margin-top: 21px;
@@ -1133,16 +1204,19 @@ select:focus-visible {
   display: grid;
   min-height: 64px;
   grid-template-columns:
-    100px minmax(220px, 1.4fr) minmax(80px, 0.45fr) minmax(130px, 0.65fr)
-    85px 140px;
+    minmax(0, 0.7fr) minmax(0, 1.6fr) minmax(0, 0.5fr) minmax(0, 0.9fr) minmax(0, 0.65fr)
+    160px;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   padding: 0 18px;
   border-bottom: 1px solid var(--line-soft);
   font-size: 9px;
 }
+.history-row > span {
+  min-width: 0;
+}
 .history-row--header {
-  min-height: 35px;
+  min-height: 40px;
   color: var(--ink-faint);
   background: var(--surface-soft);
   font:
@@ -1302,6 +1376,18 @@ select:focus-visible {
   gap: 6px;
   color: var(--ink-soft);
   font-size: 8px;
+}
+.health-badge--failed i {
+  background: var(--red);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 16%, transparent);
+}
+.health-badge--progress i {
+  background: var(--orange);
+  box-shadow: 0 0 0 3px var(--orange-soft);
+}
+.health-badge--inactive i {
+  background: var(--ink-faint);
+  box-shadow: none;
 }
 .project-tabs {
   display: flex;
@@ -3462,10 +3548,9 @@ select:focus-visible {
     display: none;
   }
   .project-row {
-    grid-template-columns: minmax(0, 1fr) 34px;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
   .project-row > span:nth-child(2),
-  .project-row > span:nth-child(3),
   .project-row > span:nth-child(4) {
     display: none;
   }
@@ -3643,4 +3728,164 @@ select:focus-visible {
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
+}
+
+/* Applications table type scale -------------------------------------------
+ * The global readability baseline above lifts dense dashboard text to 14px,
+ * which is too wide for a four-column project table at the two-up overview
+ * breakpoint. This table is a data view, so it keeps a compact but legible
+ * scale (11-13px) and lets columns shrink/truncate instead of overflowing.
+ */
+.app-shell .project-table .project-row {
+  font-size: 12px;
+}
+.app-shell .project-table .project-row > span {
+  min-width: 0;
+}
+.app-shell .project-table .project-row--header {
+  min-height: 40px;
+  color: var(--ink-faint);
+  background: var(--surface-soft);
+  font:
+    600 11px 'IBM Plex Mono',
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.app-shell .project-table .project-row--header > span:last-child {
+  text-align: right;
+}
+.app-shell .project-table .project-name strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+.app-shell .project-table .project-name small {
+  margin-top: 3px;
+  color: var(--ink-faint);
+  font:
+    11px 'IBM Plex Mono',
+    monospace;
+}
+.app-shell .project-table .project-monogram {
+  font:
+    11px 'IBM Plex Mono',
+    monospace;
+}
+.app-shell .project-table .framework-label {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font:
+    11px 'IBM Plex Mono',
+    monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-shell .project-table .production-link {
+  min-width: 0;
+  color: var(--green);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.app-shell .project-table .release-copy {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-shell .project-table .project-row > span:last-child {
+  overflow: hidden;
+  color: var(--ink-faint);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Deployments history table type scale ------------------------------------
+ * Mirrors the Applications table treatment: flexible columns, a consistent
+ * 11-13px data scale, and truncation instead of overflow at narrow widths.
+ */
+.app-shell .deployment-history .history-row {
+  font-size: 12px;
+}
+.app-shell .deployment-history .history-row > span {
+  min-width: 0;
+}
+.app-shell .deployment-history .history-row--header {
+  min-height: 40px;
+  color: var(--ink-faint);
+  background: var(--surface-soft);
+  font:
+    600 11px 'IBM Plex Mono',
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.app-shell .deployment-history .history-row--header > span:nth-child(5) {
+  text-align: right;
+}
+.app-shell .deployment-history .status {
+  font-size: 12px;
+}
+.app-shell .deployment-history .status-dot {
+  width: 8px;
+  height: 8px;
+}
+.app-shell .deployment-history .history-commit {
+  min-width: 0;
+}
+.app-shell .deployment-history .history-commit strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-shell .deployment-history .history-commit small {
+  min-width: 0;
+  margin-top: 3px;
+  color: var(--ink-faint);
+  font:
+    11px 'IBM Plex Mono',
+    monospace;
+}
+.app-shell .deployment-history .history-commit-message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-shell .deployment-history .history-row > span:nth-child(3) code {
+  display: block;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font:
+    11px 'IBM Plex Mono',
+    monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-shell .deployment-history .history-row > span:nth-child(4) {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-shell .deployment-history .history-row > span:nth-child(5) {
+  overflow: hidden;
+  color: var(--ink-faint);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-shell .deployment-history .rollback-button {
+  font-size: 12px;
 }

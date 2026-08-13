@@ -3,6 +3,7 @@ import { NavLink, useOutletContext } from 'react-router-dom';
 import type { ShellContext } from './app-shell';
 import { BrandMark } from './brand';
 import { GitBranch, Rocket } from './icon';
+import { projectReleaseState } from '../lib/project-release';
 
 const tabs = [
   { label: 'Overview', path: '' },
@@ -25,9 +26,12 @@ export function ProjectHeader({
 }): React.JSX.Element {
   const base = `/projects/${project.id}`;
   const { summary } = useOutletContext<ShellContext>();
-  const latestDeployment = summary?.deployments.find(
-    (deployment) => deployment.projectId === project.id,
+  const release = projectReleaseState(
+    project.id,
+    summary?.environments ?? [],
+    summary?.deployments ?? [],
   );
+  const latestDeployment = release.deployment;
   const deploymentActive = Boolean(
     latestDeployment && ['queued', 'building', 'deploying'].includes(latestDeployment.status),
   );
@@ -41,8 +45,8 @@ export function ProjectHeader({
           <div>
             <h1>{project.name}</h1>
             <span className="environment-badge">Production</span>
-            <span className="health-badge">
-              <i /> Healthy
+            <span className={`health-badge health-badge--${release.tone}`}>
+              <i /> {release.label}
             </span>
           </div>
           <p>

@@ -327,6 +327,15 @@ export class CloudflareClient {
     );
   }
 
+  async getWorkersSubdomain(): Promise<string> {
+    const accountId = this.#requireAccountId();
+    const result = await this.#request(
+      `/accounts/${accountId}/workers/subdomain`,
+      z.object({ subdomain: z.string().trim().min(1) }),
+    );
+    return result.subdomain;
+  }
+
   async deleteWorker(scriptName: string): Promise<void> {
     const accountId = this.#requireAccountId();
     await this.#request(
