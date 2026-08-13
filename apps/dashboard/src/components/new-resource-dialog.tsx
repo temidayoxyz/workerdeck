@@ -3,7 +3,7 @@ import {
   type DashboardSummary,
   type ManagedResource,
 } from '@workerdeck/contracts';
-import { AlertCircle, Box, X } from 'lucide-react';
+import { AlertCircle, Box, X } from './icon';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createResource } from '../lib/api';
 

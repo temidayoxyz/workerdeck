@@ -8,7 +8,7 @@ import {
   GitCommitHorizontal,
   Plus,
   RefreshCw,
-} from 'lucide-react';
+} from '../components/icon';
 import { Link, useNavigate } from 'react-router-dom';
 import { DeploymentRail } from '../components/deployment-rail';
 import { DeploymentStatus } from '../components/status';

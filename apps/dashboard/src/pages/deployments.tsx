@@ -1,5 +1,5 @@
 import type { DashboardSummary } from '@workerdeck/contracts';
-import { AlertCircle, GitCommitHorizontal, RotateCcw } from 'lucide-react';
+import { AlertCircle, GitCommitHorizontal, RotateCcw } from '../components/icon';
 import { useState } from 'react';
 import { DeploymentStatus } from '../components/status';
 import { relativeTime, shortSha } from '../lib/format';

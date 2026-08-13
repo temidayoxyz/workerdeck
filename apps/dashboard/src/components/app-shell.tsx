@@ -16,7 +16,7 @@ import {
   Rocket,
   Settings,
   Sun,
-} from 'lucide-react';
+} from './icon';
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '../lib/theme';
@@ -48,12 +48,12 @@ const pageNames: Record<string, string> = {
 
 export interface ShellContext {
   summary: DashboardSummary | null;
-  projectCreated: (project: Project) => void;
+  projectCreated: (project: Project) => Promise<void>;
 }
 
 interface AppShellProps {
   summary: DashboardSummary | null;
-  onProjectCreated: (project: Project) => void;
+  onProjectCreated: (project: Project) => Promise<void>;
 }
 
 export function AppShell({ summary, onProjectCreated }: AppShellProps): React.JSX.Element {

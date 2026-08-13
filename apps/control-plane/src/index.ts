@@ -500,7 +500,7 @@ app.post('/api/v1/projects', async (context) => {
   await repository.reserveIdempotencyKey(idempotencyKey, context.get('actor'), requestHash);
   if (!parsed.data.repositoryProvider) {
     try {
-      const project = await repository.createProject(
+      const { project } = await repository.createProject(
         parsed.data,
         context.get('actor'),
         context.get('requestId'),
@@ -625,7 +625,7 @@ app.post('/api/v1/projects', async (context) => {
         workerName,
         false,
       );
-      const project = await repository.createProject(
+      const { project, initialDeployment } = await repository.createProject(
         parsed.data,
         context.get('actor'),
         context.get('requestId'),
@@ -636,10 +636,19 @@ app.post('/api/v1/projects', async (context) => {
         },
       );
       try {
-        await client.triggerBuild(productionTrigger.id, {
+        const build = await client.triggerBuild(productionTrigger.id, {
           branch: parsed.data.productionBranch,
         });
+        if (initialDeployment) await repository.attachBuild(initialDeployment.id, build);
       } catch (error) {
+        if (initialDeployment) {
+          await repository.failDeployment(
+            initialDeployment.id,
+            error instanceof Error ? error.name : 'UNKNOWN_PROVIDER_ERROR',
+            context.get('actor'),
+            context.get('requestId'),
+          );
+        }
         console.error(
           JSON.stringify({
             level: 'error',

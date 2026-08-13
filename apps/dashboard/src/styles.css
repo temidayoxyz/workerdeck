@@ -3413,3 +3413,143 @@ select:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Readability baseline -----------------------------------------------------
+ * WorkerDeck is an operations console, not a dense data-wall. These rules
+ * establish a humane minimum type scale while preserving the larger display
+ * hierarchy declared above. Keep this block last so compact legacy rules do
+ * not silently reintroduce 6–10px interface text.
+ */
+.app-shell.app-shell
+  :is(
+    p,
+    a,
+    button,
+    strong,
+    label,
+    input,
+    select,
+    textarea,
+    dt,
+    dd,
+    th,
+    td,
+    li,
+    code,
+    time,
+    kbd,
+    small
+  ) {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.app-shell.app-shell :is(.workspace-avatar, .profile-avatar) {
+  font-size: 12px;
+}
+.app-shell.app-shell .command-button span {
+  font-size: 13px;
+}
+.app-shell.app-shell :is(.field-label > span:first-child, .form-grid label > span:first-child) {
+  font-size: 13px;
+  font-weight: 650;
+}
+.app-shell.app-shell :is(.deployment-plan h3, .panel h3) {
+  font-size: 15px;
+  line-height: 1.35;
+}
+.app-shell.app-shell :is(.eyebrow, .status-chip, .status-pill, .environment-badge) {
+  font-size: 12px;
+  line-height: 1.35;
+  letter-spacing: 0.04em;
+}
+.app-shell.app-shell
+  :is(
+    .breadcrumb,
+    .workspace-switcher,
+    .primary-nav,
+    .secondary-nav,
+    .sidebar-profile,
+    .muted-copy,
+    .security-note,
+    .edge-destination,
+    .step-number,
+    .provider-card,
+    .provider-connection,
+    .repository-picker-heading,
+    .repository-option,
+    .repository-visibility,
+    .repository-empty,
+    .detection-badge,
+    .inspection-state,
+    .field-label,
+    .field-control,
+    .deployment-plan,
+    .flow-step,
+    .metric-strip,
+    .project-row,
+    .resource-row,
+    .history-row,
+    .request-row,
+    .data-row,
+    .activity-item,
+    .definition-grid,
+    .usage-metrics,
+    .chart-kpis,
+    .chart-footnote,
+    .table-head,
+    .settings-section,
+    .operation-strip,
+    .backup-row,
+    .variable-row,
+    .project-tabs,
+    .project-route-bar
+  ) {
+  font-size: 14px;
+  line-height: 1.45;
+}
+.app-shell.app-shell
+  :is(
+    .provider-card small,
+    .provider-connection small,
+    .repository-option small,
+    .repository-empty small,
+    .inspection-state small,
+    .field-label small,
+    .flow-step small
+  ) {
+  font-size: 13px;
+  line-height: 1.45;
+}
+.app-shell.app-shell :is(input, select, textarea, .field-control) {
+  min-height: 42px;
+}
+.app-shell.app-shell :is(.button, .project-deploy) {
+  min-height: 42px;
+  font-weight: 650;
+}
+.app-shell.app-shell .primary-nav a,
+.app-shell.app-shell .secondary-nav a {
+  min-height: 44px;
+}
+.provider-card--disabled {
+  position: relative;
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+.provider-card--disabled:hover {
+  color: var(--ink-soft);
+  border-color: var(--line);
+  transform: none;
+}
+.coming-soon-badge {
+  justify-self: end;
+  padding: 4px 7px;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}

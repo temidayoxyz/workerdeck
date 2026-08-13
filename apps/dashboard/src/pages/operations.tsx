@@ -18,7 +18,7 @@ import {
   ServerCog,
   ShieldCheck,
   TimerReset,
-} from 'lucide-react';
+} from '../components/icon';
 import { useEffect, useState } from 'react';
 import {
   ApiError,

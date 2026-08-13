@@ -8,7 +8,7 @@ import {
   Network,
   Plus,
   Workflow,
-} from 'lucide-react';
+} from '../components/icon';
 import { useState } from 'react';
 import { NewResourceDialog } from '../components/new-resource-dialog';
 

@@ -15,6 +15,7 @@ import {
 } from '@workerdeck/contracts';
 import type { WorkerBuild } from '@workerdeck/provider';
 import { AppError } from './errors';
+import { normalizeNullableStorageTimestamp, normalizeStorageTimestamp } from './timestamps';
 
 interface ProjectRow {
   id: string;
@@ -116,8 +117,8 @@ const toProject = (row: ProjectRow): Project => ({
   productionBranch: row.production_branch,
   framework: row.framework,
   status: row.status,
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
+  createdAt: normalizeStorageTimestamp(row.created_at),
+  updatedAt: normalizeStorageTimestamp(row.updated_at),
 });
 
 const toEnvironment = (row: EnvironmentRow): Environment => ({
@@ -128,8 +129,8 @@ const toEnvironment = (row: EnvironmentRow): Environment => ({
   kind: row.kind,
   workerName: row.worker_name,
   url: row.url,
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
+  createdAt: normalizeStorageTimestamp(row.created_at),
+  updatedAt: normalizeStorageTimestamp(row.updated_at),
 });
 
 const toDeployment = (row: DeploymentRow): Deployment => ({
@@ -143,9 +144,9 @@ const toDeployment = (row: DeploymentRow): Deployment => ({
   buildId: row.build_id,
   workerVersionId: row.worker_version_id,
   triggeredBy: row.triggered_by,
-  startedAt: row.started_at,
-  finishedAt: row.finished_at,
-  createdAt: row.created_at,
+  startedAt: normalizeNullableStorageTimestamp(row.started_at),
+  finishedAt: normalizeNullableStorageTimestamp(row.finished_at),
+  createdAt: normalizeStorageTimestamp(row.created_at),
 });
 
 const toManagedResource = (row: ManagedResourceRow): ManagedResource => ({
@@ -156,9 +157,14 @@ const toManagedResource = (row: ManagedResourceRow): ManagedResource => ({
   cloudflareId: row.cloudflare_id,
   name: row.name,
   ownershipTag: row.ownership_tag,
-  createdAt: row.created_at,
-  deletedAt: row.deleted_at,
+  createdAt: normalizeStorageTimestamp(row.created_at),
+  deletedAt: normalizeNullableStorageTimestamp(row.deleted_at),
 });
+
+interface CreatedProject {
+  project: Project;
+  initialDeployment: Deployment | null;
+}
 
 function repositoryParts(repositoryUrl: string): { owner: string | null; name: string | null } {
   const pathname = new URL(repositoryUrl).pathname.replace(/^\//, '').replace(/\.git$/, '');
@@ -417,12 +423,13 @@ export class Repository {
     actor: string,
     requestId: string,
     buildTarget?: { workerTag: string; buildTriggerId: string; previewBuildTriggerId: string },
-  ): Promise<Project> {
+  ): Promise<CreatedProject> {
     const now = new Date().toISOString();
     const projectId = crypto.randomUUID();
     const environmentId = crypto.randomUUID();
     const previewEnvironmentId = crypto.randomUUID();
     const auditId = crypto.randomUUID();
+    const initialDeploymentId = buildTarget ? crypto.randomUUID() : null;
     const repository = repositoryParts(input.repositoryUrl);
 
     try {
@@ -498,6 +505,35 @@ export class Repository {
                   JSON.stringify({ managed: true, source: 'github' }),
                   now,
                 ),
+              this.db
+                .prepare(
+                  `INSERT INTO deployments (
+                    id, project_id, environment_id, status, git_commit_sha, git_branch,
+                    triggered_by, created_at
+                  ) VALUES (?, ?, ?, 'queued', NULL, ?, ?, ?)`,
+                )
+                .bind(
+                  initialDeploymentId,
+                  projectId,
+                  environmentId,
+                  input.productionBranch,
+                  actor,
+                  now,
+                ),
+              this.db
+                .prepare(
+                  `INSERT INTO audit_events (
+                    id, actor, action, target_type, target_id, request_id, metadata_json, created_at
+                  ) VALUES (?, ?, 'deployment.queued', 'deployment', ?, ?, ?, ?)`,
+                )
+                .bind(
+                  crypto.randomUUID(),
+                  actor,
+                  initialDeploymentId,
+                  requestId,
+                  JSON.stringify({ projectId, initial: true }),
+                  now,
+                ),
             ]
           : []),
         this.db
@@ -525,7 +561,16 @@ export class Repository {
         'PROJECT_CREATE_FAILED',
         'The project could not be read after creation.',
       );
-    return toProject(row);
+    const initialDeployment = initialDeploymentId
+      ? await this.db
+          .prepare('SELECT * FROM deployments WHERE id = ?')
+          .bind(initialDeploymentId)
+          .first<DeploymentRow>()
+      : null;
+    return {
+      project: toProject(row),
+      initialDeployment: initialDeployment ? toDeployment(initialDeployment) : null,
+    };
   }
 
   async createDeployment(

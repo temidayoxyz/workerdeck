@@ -1,5 +1,5 @@
 import type { DashboardSummary } from '@workerdeck/contracts';
-import { CheckCircle2, ExternalLink, KeyRound, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, ExternalLink, KeyRound, ShieldCheck } from '../components/icon';
 
 export function SettingsPage({ summary }: { summary: DashboardSummary | null }): React.JSX.Element {
   return (

@@ -1,5 +1,5 @@
 import type { DashboardSummary } from '@workerdeck/contracts';
-import { Boxes, Gauge, LayoutGrid, Rocket, Search, Settings, X } from 'lucide-react';
+import { Boxes, Gauge, LayoutGrid, Rocket, Search, Settings, X } from './icon';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 

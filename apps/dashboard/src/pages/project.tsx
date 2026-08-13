@@ -25,7 +25,7 @@ import {
   Settings,
   ShieldCheck,
   Trash2,
-} from 'lucide-react';
+} from '../components/icon';
 import { useEffect, useState } from 'react';
 import { Link, useOutletContext, useParams } from 'react-router-dom';
 import type { ShellContext } from '../components/app-shell';

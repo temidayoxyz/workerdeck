@@ -1,5 +1,5 @@
 import type { DashboardSummary } from '@workerdeck/contracts';
-import { AlertCircle, Github, Plus, Rocket } from 'lucide-react';
+import { AlertCircle, Github, Plus, Rocket } from '../components/icon';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { relativeTime, titleCase } from '../lib/format';
@@ -81,7 +81,16 @@ export function ProjectsPage({
                 <button
                   className="project-deploy"
                   type="button"
-                  disabled={deployingProject === project.id}
+                  disabled={
+                    deployingProject === project.id ||
+                    Boolean(
+                      summary?.deployments.some(
+                        (deployment) =>
+                          deployment.projectId === project.id &&
+                          ['queued', 'building', 'deploying'].includes(deployment.status),
+                      ),
+                    )
+                  }
                   onClick={() => {
                     const environment = summary?.environments.find(
                       (candidate) =>
@@ -105,7 +114,16 @@ export function ProjectsPage({
                   }}
                 >
                   <Rocket size={13} />
-                  {deployingProject === project.id ? 'Starting...' : 'Deploy'}
+                  {deployingProject === project.id ||
+                  summary?.deployments.some(
+                    (deployment) =>
+                      deployment.projectId === project.id &&
+                      ['queued', 'building', 'deploying'].includes(deployment.status),
+                  )
+                    ? 'Deploying…'
+                    : summary?.deployments.some((deployment) => deployment.projectId === project.id)
+                      ? 'Redeploy'
+                      : 'Deploy'}
                 </button>
               </div>
             </article>

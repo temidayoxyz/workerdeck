@@ -17,7 +17,7 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
-} from 'lucide-react';
+} from '../components/icon';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import type { ShellContext } from '../components/app-shell';
@@ -32,7 +32,7 @@ import {
   syncGitHubInstallations,
 } from '../lib/api';
 
-type Provider = 'github' | 'gitlab' | 'public';
+type Provider = 'github' | 'public';
 
 const humanizeRepositoryName = (name: string): string =>
   name
@@ -225,8 +225,8 @@ export function NewProjectPage(): React.JSX.Element {
     setError(null);
     try {
       const project = await createProject(parsed.data);
-      projectCreated(project);
-      void navigate(`/projects/${project.id}`);
+      await projectCreated(project);
+      void navigate(`/projects/${project.id}/deployments`);
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : 'WorkerDeck could not import this repository.',
@@ -286,18 +286,17 @@ export function NewProjectPage(): React.JSX.Element {
                 {provider === 'github' ? <Check size={16} /> : null}
               </button>
               <button
-                className={
-                  provider === 'gitlab' ? 'provider-card provider-card--active' : 'provider-card'
-                }
+                className="provider-card provider-card--disabled"
                 type="button"
-                onClick={() => setProvider('gitlab')}
+                disabled
+                aria-label="GitLab integration coming soon"
               >
                 <Gitlab size={23} />
                 <span>
                   <strong>GitLab</strong>
-                  <small>Cloudflare Git integration</small>
+                  <small>Integration coming soon</small>
                 </span>
-                {provider === 'gitlab' ? <Check size={16} /> : null}
+                <span className="coming-soon-badge">Soon</span>
               </button>
               <button
                 className={
@@ -446,11 +445,7 @@ export function NewProjectPage(): React.JSX.Element {
                     required
                   />
                 </span>
-                <small>
-                  {provider === 'gitlab'
-                    ? 'Authorize the repository through the Cloudflare GitLab integration first.'
-                    : 'Use this fallback only for a public repository.'}
-                </small>
+                <small>Use this fallback only for a public repository.</small>
               </label>
             )}
           </section>

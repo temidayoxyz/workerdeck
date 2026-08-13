@@ -94,11 +94,11 @@ export function App(): React.JSX.Element {
     return () => window.clearInterval(timer);
   }, [activeDeploymentIds]);
 
-  const handleProjectCreated = (project: Project) => {
+  const handleProjectCreated = async (project: Project) => {
     setSummary((current) =>
       current ? { ...current, projects: [project, ...current.projects] } : current,
     );
-    if (!isDemoMode()) void load();
+    if (!isDemoMode()) await load();
   };
 
   const handleDeploy = async (projectId: string, environmentId: string) => {
