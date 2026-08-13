@@ -1,6 +1,6 @@
 import type { Deployment, DeploymentStage } from '@workerdeck/contracts';
 
-function stagesFor(deployment: Deployment): DeploymentStage[] {
+function stagesFor(deployment: Deployment, production: boolean): DeploymentStage[] {
   const failed = deployment.status === 'failed';
   const buildComplete = ['deploying', 'ready', 'rolled_back'].includes(deployment.status);
   const versionComplete = ['ready', 'rolled_back'].includes(deployment.status);
@@ -31,17 +31,23 @@ function stagesFor(deployment: Deployment): DeploymentStage[] {
     },
     {
       key: 'traffic',
-      label: 'Traffic',
+      label: production ? 'Traffic' : 'Preview',
       status: deployment.status === 'ready' ? 'complete' : 'waiting',
-      detail: deployment.status === 'ready' ? '100%' : null,
+      detail: deployment.status === 'ready' ? (production ? '100%' : 'Ready') : null,
     },
   ];
 }
 
-export function DeploymentRail({ deployment }: { deployment: Deployment }): React.JSX.Element {
+export function DeploymentRail({
+  deployment,
+  production = true,
+}: {
+  deployment: Deployment;
+  production?: boolean;
+}): React.JSX.Element {
   return (
     <ol className="deployment-rail" aria-label="Deployment progress">
-      {stagesFor(deployment).map((stage) => (
+      {stagesFor(deployment, production).map((stage) => (
         <li className={`deployment-stage deployment-stage--${stage.status}`} key={stage.key}>
           <span className="deployment-node" aria-hidden="true" />
           <span className="deployment-stage-copy">

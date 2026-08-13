@@ -7,8 +7,9 @@ does not run in the WorkerDeck control plane.
 
 Cloudflare currently requires the account owner to authorize Cloudflare's GitHub App once before its
 Builds API can connect repositories. WorkerDeck adds its own optional GitHub App for the in-dashboard
-repository catalog. The WorkerDeck App needs repository **Metadata: Read** only; installation access
-tokens are created on demand, expire at GitHub, and are never persisted.
+repository catalog. The WorkerDeck App needs repository **Metadata: Read** and **Contents: Read-only**
+so GitHub can show selected private repositories. WorkerDeck requests metadata-only installation
+tokens on demand; they expire at GitHub and are never persisted.
 
 Connected imports perform Cloudflare's documented setup sequence:
 
@@ -25,12 +26,17 @@ name.
 
 ## Release lifecycle
 
-1. The dashboard submits a production deployment with a unique idempotency key.
-2. The API enforces one active deployment per environment.
-3. WorkerDeck triggers the matching Cloudflare Build by branch and optional commit SHA.
-4. The dashboard periodically asks the API to reconcile the build.
-5. On success, WorkerDeck records the active 100% Worker version. Failures and cancellations become
-   terminal release states and audit events.
+Every connected import creates two Cloudflare Builds triggers:
+
+- pushes to the configured production branch run `wrangler deploy` and become the live deployment;
+- pushes and pull requests on other branches run `wrangler versions upload`, producing an isolated
+  preview version and URL without changing production traffic.
+
+The WorkerDeck Deploy button invokes the same production trigger with an idempotency key and optional
+commit SHA. A cron reconciliation pass also discovers builds started by Git pushes or pull requests,
+records active progress, maps successful outputs to their immutable Worker versions, and preserves
+their source, author, branch, commit, outcome, and logs in WorkerDeck. It processes projects in bounded
+batches so one account cannot make a scheduled Worker invocation run without limit.
 
 ## Managed data resources
 
@@ -57,6 +63,10 @@ Any completed deployment with a recorded Worker version can be promoted back to 
 explicit browser confirmation. The API requires the literal `ROLLBACK` confirmation and an
 idempotency key, promotes the exact version, then writes a new immutable rollback deployment and audit
 event. Rollback changes Worker code only; it does not reverse D1, KV, R2, or Durable Object data.
+It also does not rewrite Git history. Reverting a commit and pushing the revert creates a normal new
+build and deployment. WorkerDeck's Rollback action is the faster operational path: it immediately
+promotes the selected prior production Worker version while leaving the repository untouched. A later
+push remains authoritative and will create the next deployment.
 
 Cloudflare's Workers Builds API requires a user-scoped API token; account-owned API tokens are not
 currently supported by that API. The control-plane token is stored as `CLOUDFLARE_API_TOKEN`. A

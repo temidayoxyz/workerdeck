@@ -121,9 +121,9 @@ for normal continuous delivery.
 See the [production installation guide](./docs/installation.md) for the required Cloudflare values,
 least-privilege token scopes, GitHub App setup, and verification checklist.
 
-The installer accepts the Cloudflare account and Access identifiers, the dedicated build-token ID,
-and the WorkerDeck GitHub App ID and slug. It prompts interactively for all three secret values: the
-control-plane token, the application build token, and the GitHub App private key.
+The installer accepts the Cloudflare account and Access identifiers plus the WorkerDeck GitHub App ID,
+slug, and private-key file. It prompts interactively for the two Cloudflare token values, verifies
+them, derives the non-secret build-token ID automatically, and pipes all secrets directly to Wrangler.
 
 ## Repository layout
 

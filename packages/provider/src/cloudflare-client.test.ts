@@ -64,6 +64,102 @@ describe('CloudflareClient', () => {
     expect(init?.body as string).not.toContain('secret-token');
   });
 
+  it('lists push builds with source, author, trigger, and commit metadata', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      response([
+        {
+          build_uuid: 'build-id',
+          status: 'stopped',
+          build_outcome: 'success',
+          created_on: '2026-08-13T09:00:00.000Z',
+          running_on: '2026-08-13T09:00:02.000Z',
+          stopped_on: '2026-08-13T09:00:20.000Z',
+          build_trigger_metadata: {
+            author: 'developer@example.com',
+            branch: 'main',
+            build_trigger_source: 'push',
+            commit_hash: 'abcdef1234567',
+            commit_message: 'Ship from GitHub',
+          },
+          trigger: { trigger_uuid: 'production-trigger' },
+        },
+      ]),
+    );
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(client.listBuilds('worker/tag', 500)).resolves.toEqual([
+      {
+        id: 'build-id',
+        status: 'stopped',
+        outcome: 'success',
+        source: 'push',
+        author: 'developer@example.com',
+        triggerId: 'production-trigger',
+        branch: 'main',
+        commitSha: 'abcdef1234567',
+        commitMessage: 'Ship from GitHub',
+        createdOn: '2026-08-13T09:00:00.000Z',
+        startedOn: '2026-08-13T09:00:02.000Z',
+        stoppedOn: '2026-08-13T09:00:20.000Z',
+      },
+    ]);
+    expect(fetcher.mock.calls[0]?.[0]).toContain(
+      '/builds/workers/worker%2Ftag/builds?per_page=200',
+    );
+  });
+
+  it('maps Worker versions back to their immutable Builds outputs', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        response({
+          items: [
+            {
+              id: 'version-id',
+              metadata: { created_on: '2026-08-13T09:00:20.000Z', hasPreview: true },
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          builds: {
+            'version-id': {
+              build_uuid: 'build-id',
+              status: 'stopped',
+              build_outcome: 'success',
+              created_on: '2026-08-13T09:00:00.000Z',
+              build_trigger_metadata: {
+                branch: 'feature/preview',
+                build_trigger_source: 'pull_request',
+                commit_hash: 'abcdef1234567',
+                commit_message: 'Preview change',
+              },
+            },
+          },
+        }),
+      );
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(client.listWorkerVersions('worker/name', 40)).resolves.toEqual([
+      {
+        id: 'version-id',
+        createdOn: '2026-08-13T09:00:20.000Z',
+        hasPreview: true,
+      },
+    ]);
+    const versionBuilds = await client.getBuildsByVersionIds(['version-id', 'version-id']);
+    expect(versionBuilds).toHaveLength(1);
+    expect(versionBuilds[0]?.versionId).toBe('version-id');
+    expect(versionBuilds[0]?.build).toMatchObject({
+      id: 'build-id',
+      source: 'pull_request',
+      branch: 'feature/preview',
+    });
+    expect(fetcher.mock.calls[0]?.[0]).toContain('/versions?per_page=20');
+    expect(fetcher.mock.calls[1]?.[0]).toContain('version_ids=version-id');
+  });
+
   it('surfaces Cloudflare error details with the response status', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(

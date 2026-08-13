@@ -44,6 +44,9 @@ export function DeploymentsPage({
           const project = summary.projects.find(
             (candidate) => candidate.id === deployment.projectId,
           );
+          const environment = summary.environments.find(
+            (candidate) => candidate.id === deployment.environmentId,
+          );
           return (
             <div className="history-row" key={deployment.id}>
               <span>
@@ -64,7 +67,8 @@ export function DeploymentsPage({
               <span className="muted-copy">{relativeTime(deployment.createdAt)}</span>
               <span>
                 {deployment.workerVersionId &&
-                ['ready', 'rolled_back'].includes(deployment.status) ? (
+                ['ready', 'rolled_back'].includes(deployment.status) &&
+                environment?.kind === 'production' ? (
                   <button
                     className="rollback-button"
                     type="button"

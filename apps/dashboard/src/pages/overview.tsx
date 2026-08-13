@@ -128,7 +128,10 @@ export function OverviewPage({
                   <span>{environmentFor(summary.environments, latest)?.name ?? 'Production'}</span>
                   <span>{relativeTime(latest.createdAt)}</span>
                 </div>
-                <DeploymentRail deployment={latest} />
+                <DeploymentRail
+                  deployment={latest}
+                  production={environmentFor(summary.environments, latest)?.kind === 'production'}
+                />
                 <div className="panel-footer">
                   <Link className="text-button" to="/deployments">
                     Open deployment <ArrowRight size={15} />

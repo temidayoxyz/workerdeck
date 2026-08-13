@@ -40,6 +40,7 @@ export function createInstallConfig(input: InstallConfigInput): Record<string, u
     preview_urls: false,
     routes: [{ pattern: dashboardUrl.hostname, custom_domain: true }],
     observability: { enabled: true, head_sampling_rate: 1 },
+    triggers: { crons: ['* * * * *'] },
     vars: {
       ENVIRONMENT: 'production',
       AUTH_MODE: 'cloudflare-access',

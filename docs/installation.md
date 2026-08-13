@@ -25,7 +25,6 @@ The following values are configuration rather than secrets and may be shared wit
 | Access team domain              | Zero Trust → Settings; usually `<team>.cloudflareaccess.com`                    |
 | Access application audience     | Zero Trust → Access → Applications → WorkerDeck → Application Audience tag      |
 | Allowed identity                | The exact email, email domain, or identity group permitted by the Access policy |
-| Build-token ID                  | My Profile → API Tokens → the dedicated build token → token ID                  |
 
 The GitHub setup also requires the non-secret WorkerDeck GitHub App ID and URL slug. Its private key
 is entered only at the encrypted installer prompt.
@@ -134,10 +133,14 @@ organization or account that owns the repositories.
 
 Use:
 
-- Repository permission: **Metadata — Read-only**.
+- Repository permissions: **Metadata — Read-only** (mandatory) and **Contents — Read-only**.
 - Setup URL: `https://deck.example.com/projects/new`.
 - Webhooks: disabled; WorkerDeck does not consume webhook deliveries.
 - Installation scope: only the repositories WorkerDeck should display.
+
+Contents remains read-only so GitHub exposes the private-repository installation picker. WorkerDeck
+requests short-lived metadata-only installation tokens for its own catalog; Cloudflare's separate
+GitHub App performs repository checkout for builds.
 
 The installer stores `GITHUB_APP_ID` and `GITHUB_APP_SLUG` as non-secret Worker configuration and
 prompts for `GITHUB_APP_PRIVATE_KEY` as an encrypted secret. WorkerDeck creates short-lived

@@ -49,6 +49,16 @@ export function App(): React.JSX.Element {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (isDemoMode()) return;
+    const timer = window.setInterval(() => {
+      void getDashboard()
+        .then(setSummary)
+        .catch(() => undefined);
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const activeDeploymentIds =
     summary?.deployments
       .filter((deployment) => ['queued', 'building', 'deploying'].includes(deployment.status))

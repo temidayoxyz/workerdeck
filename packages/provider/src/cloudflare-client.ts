@@ -9,6 +9,8 @@ import type {
   ProvisionedResource,
   WorkerBuild,
   WorkerDeployment,
+  WorkerVersion,
+  VersionBuild,
   WorkerDomain,
   WorkerScript,
   WorkerSecret,
@@ -47,16 +49,22 @@ const workerBuildSchema = z
     stopped_on: z.string().nullish(),
     build_trigger_metadata: z
       .object({
+        author: z.string().nullish(),
         branch: z.string().nullish(),
+        build_trigger_source: z.enum(['push', 'pull_request', 'manual', 'api']).nullish(),
         commit_hash: z.string().nullish(),
         commit_message: z.string().nullish(),
       })
       .nullish(),
+    trigger: z.object({ trigger_uuid: z.string().nullish() }).nullish(),
   })
   .transform((build): WorkerBuild => ({
     id: build.build_uuid,
     status: build.status,
     outcome: build.build_outcome,
+    source: build.build_trigger_metadata?.build_trigger_source ?? null,
+    author: build.build_trigger_metadata?.author ?? null,
+    triggerId: build.trigger?.trigger_uuid ?? null,
     branch: build.build_trigger_metadata?.branch ?? null,
     commitSha: build.build_trigger_metadata?.commit_hash ?? null,
     commitMessage: build.build_trigger_metadata?.commit_message ?? null,
@@ -75,12 +83,28 @@ const triggeredBuildSchema = z
     id: build.build_uuid,
     status: build.status,
     outcome: null,
+    source: 'api',
+    author: null,
+    triggerId: null,
     branch: null,
     commitSha: null,
     commitMessage: null,
     createdOn: build.created_on,
     startedOn: null,
     stoppedOn: null,
+  }));
+
+const workerVersionSchema = z
+  .object({
+    id: z.string(),
+    metadata: z
+      .object({ created_on: z.string().nullish(), hasPreview: z.boolean().nullish() })
+      .nullish(),
+  })
+  .transform((version): WorkerVersion => ({
+    id: version.id,
+    createdOn: version.metadata?.created_on ?? new Date(0).toISOString(),
+    hasPreview: version.metadata?.hasPreview ?? false,
   }));
 
 export class CloudflareApiError extends Error {
@@ -603,6 +627,46 @@ export class CloudflareClient {
     return this.#request(
       `/accounts/${accountId}/builds/builds/${encodeURIComponent(buildId)}`,
       workerBuildSchema,
+    );
+  }
+
+  async listBuilds(workerTag: string, perPage = 50): Promise<WorkerBuild[]> {
+    const accountId = this.#requireAccountId();
+    const boundedPerPage = Math.max(1, Math.min(perPage, 200));
+    return this.#request(
+      `/accounts/${accountId}/builds/workers/${encodeURIComponent(workerTag)}/builds?per_page=${boundedPerPage}`,
+      z.array(workerBuildSchema),
+    );
+  }
+
+  async listWorkerVersions(scriptName: string, perPage = 20): Promise<WorkerVersion[]> {
+    const accountId = this.#requireAccountId();
+    const boundedPerPage = Math.max(1, Math.min(perPage, 20));
+    return this.#request(
+      `/accounts/${accountId}/workers/scripts/${encodeURIComponent(scriptName)}/versions?per_page=${boundedPerPage}`,
+      z.union([
+        z.array(workerVersionSchema),
+        z
+          .object({ items: z.array(workerVersionSchema).optional().default([]) })
+          .transform((result) => result.items),
+      ]),
+    );
+  }
+
+  async getBuildsByVersionIds(versionIds: string[]): Promise<VersionBuild[]> {
+    const accountId = this.#requireAccountId();
+    const uniqueVersionIds = [...new Set(versionIds)].slice(0, 20);
+    if (uniqueVersionIds.length === 0) return [];
+    return this.#request(
+      `/accounts/${accountId}/builds/builds?version_ids=${encodeURIComponent(uniqueVersionIds.join(','))}`,
+      z
+        .object({ builds: z.record(z.string(), workerBuildSchema).optional().default({}) })
+        .transform((result) =>
+          Object.entries(result.builds).map(([versionId, build]): VersionBuild => ({
+            versionId,
+            build,
+          })),
+        ),
     );
   }
 

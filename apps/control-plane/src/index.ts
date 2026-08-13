@@ -554,7 +554,11 @@ app.post('/api/v1/projects', async (context) => {
         parsed.data,
         context.get('actor'),
         context.get('requestId'),
-        { workerTag: worker.tag, buildTriggerId: productionTrigger.id },
+        {
+          workerTag: worker.tag,
+          buildTriggerId: productionTrigger.id,
+          previewBuildTriggerId: previewTrigger.id,
+        },
       );
       await repository.storeIdempotentValue(
         idempotencyKey,
@@ -946,6 +950,13 @@ app.post('/api/v1/deployments/:deploymentId/rollback', async (context) => {
     );
   }
   const runtime = await repository.getDeploymentTarget(target.projectId, target.environmentId);
+  if (runtime.environmentKind !== 'production') {
+    throw new AppError(
+      409,
+      'PREVIEW_NOT_ROLLBACKABLE',
+      'Preview versions cannot be rolled back into production. Deploy or promote them explicitly.',
+    );
+  }
   await repository.reserveIdempotencyKey(idempotencyKey, context.get('actor'), requestHash);
   try {
     await cloudflareClient(context).deployVersion(
@@ -1045,7 +1056,83 @@ app.onError((error, context) => {
   );
 });
 
-export default app;
+export default {
+  fetch: app.fetch,
+  scheduled(_controller, env, executionContext) {
+    executionContext.waitUntil(syncProviderBuilds(env));
+  },
+} satisfies ExportedHandler<AppEnv['Bindings']>;
+
+async function syncProviderBuilds(env: AppEnv['Bindings']): Promise<void> {
+  if (!env.CLOUDFLARE_API_TOKEN || !env.CLOUDFLARE_ACCOUNT_ID) return;
+  const repository = new Repository(env.DB);
+  const targets = await repository.nextBuildSyncTargets();
+  const client = new CloudflareClient({
+    token: env.CLOUDFLARE_API_TOKEN,
+    accountId: env.CLOUDFLARE_ACCOUNT_ID,
+  });
+  await Promise.allSettled(
+    targets.map(async (target) => {
+      const [builds, versions, triggers] = await Promise.all([
+        client.listBuilds(target.workerTag, 50),
+        client.listWorkerVersions(target.workerName, 20),
+        client.listBuildTriggers(target.workerTag),
+      ]);
+      if (!target.productionTriggerId) {
+        target.productionTriggerId =
+          triggers.find((trigger) => trigger.branchIncludes.includes(target.productionBranch))
+            ?.id ?? null;
+        if (target.productionTriggerId) {
+          await repository.saveBuildTarget(
+            target.productionEnvironmentId,
+            target.workerTag,
+            target.productionTriggerId,
+          );
+        }
+      }
+      if (!target.previewTriggerId) {
+        target.previewTriggerId =
+          triggers.find(
+            (trigger) =>
+              trigger.branchIncludes.includes('*') &&
+              trigger.branchExcludes.includes(target.productionBranch),
+          )?.id ?? null;
+        if (target.previewTriggerId) {
+          await repository.saveBuildTarget(
+            target.previewEnvironmentId,
+            target.workerTag,
+            target.previewTriggerId,
+          );
+        }
+      }
+      const buildsByVersion = await client.getBuildsByVersionIds(
+        versions.map((version) => version.id),
+      );
+      const versionByBuildId = new Map(
+        buildsByVersion.map(({ versionId, build }) => [build.id, versionId]),
+      );
+      for (const build of [...builds].sort((left, right) =>
+        right.createdOn.localeCompare(left.createdOn),
+      )) {
+        const ownedTriggerIds = new Set(
+          [target.productionTriggerId, target.previewTriggerId].filter(
+            (triggerId): triggerId is string => Boolean(triggerId),
+          ),
+        );
+        if (!build.triggerId || !ownedTriggerIds.has(build.triggerId)) {
+          continue;
+        }
+        await repository.recordProviderBuild({
+          target,
+          build,
+          workerVersionId: versionByBuildId.get(build.id) ?? null,
+          actor: 'automation@workerdeck',
+          requestId: crypto.randomUUID(),
+        });
+      }
+    }),
+  );
+}
 
 function cloudflareClient(context: Context<AppEnv>): CloudflareClient {
   const token = context.env.CLOUDFLARE_API_TOKEN;

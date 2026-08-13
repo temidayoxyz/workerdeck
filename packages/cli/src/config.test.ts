@@ -25,6 +25,7 @@ describe('createInstallConfig', () => {
     expect(config).toHaveProperty('vars.GITHUB_APP_SLUG', 'workerdeck-example');
     expect(config).toHaveProperty('workers_dev', false);
     expect(config).toHaveProperty('preview_urls', false);
+    expect(config).toHaveProperty('triggers.crons', ['* * * * *']);
     expect(config).toHaveProperty('routes.0', {
       pattern: 'deck.example.com',
       custom_domain: true,

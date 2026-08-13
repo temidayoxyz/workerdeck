@@ -80,12 +80,26 @@ export interface WorkerBuild {
   id: string;
   status: 'queued' | 'initializing' | 'running' | 'stopped';
   outcome: 'success' | 'fail' | 'skipped' | 'cancelled' | 'terminated' | null;
+  source: 'push' | 'pull_request' | 'manual' | 'api' | null;
+  author: string | null;
+  triggerId: string | null;
   branch: string | null;
   commitSha: string | null;
   commitMessage: string | null;
   createdOn: string;
   startedOn: string | null;
   stoppedOn: string | null;
+}
+
+export interface WorkerVersion {
+  id: string;
+  createdOn: string;
+  hasPreview: boolean;
+}
+
+export interface VersionBuild {
+  versionId: string;
+  build: WorkerBuild;
 }
 
 export interface TriggerBuildInput {

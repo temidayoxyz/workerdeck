@@ -48,10 +48,22 @@ interface EnvironmentRow {
 export interface DeploymentTarget {
   projectId: string;
   environmentId: string;
+  environmentKind: Environment['kind'];
   productionBranch: string;
   workerName: string;
   workerTag: string | null;
   buildTriggerId: string | null;
+}
+
+export interface BuildSyncTarget {
+  projectId: string;
+  productionBranch: string;
+  workerName: string;
+  workerTag: string;
+  productionEnvironmentId: string;
+  previewEnvironmentId: string;
+  productionTriggerId: string | null;
+  previewTriggerId: string | null;
 }
 
 interface DeploymentRow {
@@ -403,11 +415,12 @@ export class Repository {
     input: CreateProjectInput,
     actor: string,
     requestId: string,
-    buildTarget?: { workerTag: string; buildTriggerId: string },
+    buildTarget?: { workerTag: string; buildTriggerId: string; previewBuildTriggerId: string },
   ): Promise<Project> {
     const now = new Date().toISOString();
     const projectId = crypto.randomUUID();
     const environmentId = crypto.randomUUID();
+    const previewEnvironmentId = crypto.randomUUID();
     const auditId = crypto.randomUUID();
     const repository = repositoryParts(input.repositoryUrl);
 
@@ -446,6 +459,22 @@ export class Repository {
             `workerdeck-${input.slug}`,
             buildTarget?.workerTag ?? null,
             buildTarget?.buildTriggerId ?? null,
+            now,
+            now,
+          ),
+        this.db
+          .prepare(
+            `INSERT INTO environments (
+              id, project_id, name, slug, kind, worker_name, worker_tag, build_trigger_id,
+              created_at, updated_at
+            ) VALUES (?, ?, 'Preview', 'preview', 'preview', ?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            previewEnvironmentId,
+            projectId,
+            `workerdeck-${input.slug}`,
+            buildTarget?.workerTag ?? null,
+            buildTarget?.previewBuildTriggerId ?? null,
             now,
             now,
           ),
@@ -566,6 +595,7 @@ export class Repository {
           p.id AS project_id,
           p.production_branch,
           e.id AS environment_id,
+          e.kind AS environment_kind,
           e.worker_name,
           e.worker_tag,
           e.build_trigger_id
@@ -577,6 +607,7 @@ export class Repository {
       .first<{
         project_id: string;
         environment_id: string;
+        environment_kind: Environment['kind'];
         production_branch: string;
         worker_name: string | null;
         worker_tag: string | null;
@@ -595,11 +626,174 @@ export class Repository {
     return {
       projectId: row.project_id,
       environmentId: row.environment_id,
+      environmentKind: row.environment_kind,
       productionBranch: row.production_branch,
       workerName: row.worker_name,
       workerTag: row.worker_tag,
       buildTriggerId: row.build_trigger_id,
     };
+  }
+
+  async nextBuildSyncTargets(limit = 10): Promise<BuildSyncTarget[]> {
+    const boundedLimit = Math.max(1, Math.min(limit, 15));
+    const countRow = await this.db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM environments WHERE kind = 'production' AND worker_tag IS NOT NULL",
+      )
+      .first<{ count: number }>();
+    const count = Number(countRow?.count ?? 0);
+    if (count === 0) return [];
+    const cursorRow = await this.db
+      .prepare("SELECT value FROM settings WHERE key = 'build_sync_cursor'")
+      .first<{ value: string }>();
+    const requestedOffset = Number.parseInt(cursorRow?.value ?? '0', 10);
+    const offset =
+      Number.isSafeInteger(requestedOffset) && requestedOffset >= 0 ? requestedOffset % count : 0;
+    const result = await this.db
+      .prepare(
+        `SELECT
+          p.id AS project_id,
+          p.production_branch,
+          production.worker_name,
+          production.worker_tag,
+          production.id AS production_environment_id,
+          production.build_trigger_id AS production_trigger_id,
+          preview.id AS preview_environment_id,
+          preview.build_trigger_id AS preview_trigger_id
+        FROM projects p
+        JOIN environments production
+          ON production.project_id = p.id AND production.kind = 'production'
+        JOIN environments preview
+          ON preview.project_id = p.id AND preview.kind = 'preview'
+        WHERE production.worker_name IS NOT NULL AND production.worker_tag IS NOT NULL
+        ORDER BY p.created_at ASC
+        LIMIT ? OFFSET ?`,
+      )
+      .bind(boundedLimit, offset)
+      .all<{
+        project_id: string;
+        production_branch: string;
+        worker_name: string;
+        worker_tag: string;
+        production_environment_id: string;
+        production_trigger_id: string | null;
+        preview_environment_id: string;
+        preview_trigger_id: string | null;
+      }>();
+    const nextOffset = (offset + Math.max(result.results.length, 1)) % count;
+    const now = new Date().toISOString();
+    await this.db
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES ('build_sync_cursor', ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .bind(String(nextOffset), now)
+      .run();
+    return result.results.map((row) => ({
+      projectId: row.project_id,
+      productionBranch: row.production_branch,
+      workerName: row.worker_name,
+      workerTag: row.worker_tag,
+      productionEnvironmentId: row.production_environment_id,
+      previewEnvironmentId: row.preview_environment_id,
+      productionTriggerId: row.production_trigger_id,
+      previewTriggerId: row.preview_trigger_id,
+    }));
+  }
+
+  async recordProviderBuild(input: {
+    target: BuildSyncTarget;
+    build: WorkerBuild;
+    workerVersionId: string | null;
+    actor: string;
+    requestId: string;
+  }): Promise<Deployment | null> {
+    const existing = await this.db
+      .prepare('SELECT * FROM deployments WHERE build_id = ?')
+      .bind(input.build.id)
+      .first<DeploymentRow>();
+    if (existing) {
+      return this.reconcileBuild(
+        existing.id,
+        input.build,
+        input.workerVersionId,
+        input.actor,
+        input.requestId,
+      );
+    }
+    const production = input.build.branch === input.target.productionBranch;
+    const environmentId = production
+      ? input.target.productionEnvironmentId
+      : input.target.previewEnvironmentId;
+    const terminal = input.build.status === 'stopped';
+    const status: Deployment['status'] = !terminal
+      ? 'building'
+      : input.build.outcome === 'success'
+        ? 'ready'
+        : input.build.outcome === 'cancelled' || input.build.outcome === 'terminated'
+          ? 'cancelled'
+          : 'failed';
+    const id = crypto.randomUUID();
+    const createdAt = input.build.createdOn;
+    const finishedAt = terminal ? (input.build.stoppedOn ?? createdAt) : null;
+    const triggeredBy = input.build.author ?? `Cloudflare ${input.build.source ?? 'build'}`;
+    try {
+      await this.db.batch([
+        this.db
+          .prepare(
+            `INSERT INTO deployments (
+              id, project_id, environment_id, status, git_commit_sha, git_commit_message,
+              git_branch, build_id, worker_version_id, triggered_by, started_at, finished_at,
+              created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            id,
+            input.target.projectId,
+            environmentId,
+            status,
+            input.build.commitSha,
+            input.build.commitMessage,
+            input.build.branch,
+            input.build.id,
+            input.workerVersionId,
+            triggeredBy.slice(0, 255),
+            input.build.startedOn ?? createdAt,
+            finishedAt,
+            createdAt,
+          ),
+        this.db
+          .prepare(
+            `INSERT INTO audit_events (
+              id, actor, action, target_type, target_id, request_id, metadata_json, created_at
+            ) VALUES (?, ?, 'deployment.discovered', 'deployment', ?, ?, ?, ?)`,
+          )
+          .bind(
+            crypto.randomUUID(),
+            input.actor,
+            id,
+            input.requestId,
+            JSON.stringify({
+              buildId: input.build.id,
+              source: input.build.source,
+              environment: production ? 'production' : 'preview',
+              outcome: input.build.outcome,
+            }),
+            new Date().toISOString(),
+          ),
+      ]);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('UNIQUE')) {
+        const raced = await this.db
+          .prepare('SELECT * FROM deployments WHERE build_id = ?')
+          .bind(input.build.id)
+          .first<DeploymentRow>();
+        if (raced) return toDeployment(raced);
+        return null;
+      }
+      throw error;
+    }
+    return this.requireDeployment(id);
   }
 
   async saveBuildTarget(

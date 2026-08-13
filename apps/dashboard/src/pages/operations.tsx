@@ -150,7 +150,8 @@ export function ObservabilityPage({
       <section className="health-rail">
         {summary?.projects.slice(0, 4).map((project) => {
           const workerName = summary.environments.find(
-            (environment) => environment.projectId === project.id,
+            (environment) =>
+              environment.projectId === project.id && environment.kind === 'production',
           )?.workerName;
           const projectAnalytics = analytics?.projects.find(
             (item) => item.workerName === workerName,

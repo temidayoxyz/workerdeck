@@ -96,8 +96,10 @@ export function ProjectPage({
     };
   }, [environment?.workerName]);
   if (!project) return <MissingProject />;
-  const deployments = summary?.deployments.filter((item) => item.projectId === project.id) ?? [];
-  const current = deployments[0];
+  const current = summary?.deployments.find(
+    (deployment) =>
+      deployment.projectId === project.id && deployment.environmentId === environment?.id,
+  );
   return (
     <div className="project-page">
       <ProjectHeader
@@ -245,7 +247,9 @@ export function ProjectDeploymentsPage({
 }): React.JSX.Element {
   const { projectId } = useParams();
   const project = summary?.projects.find((candidate) => candidate.id === projectId);
-  const environment = summary?.environments.find((candidate) => candidate.projectId === projectId);
+  const environment = summary?.environments.find(
+    (candidate) => candidate.projectId === projectId && candidate.kind === 'production',
+  );
   if (!project) return <MissingProject />;
   const deployments = summary?.deployments.filter((item) => item.projectId === project.id) ?? [];
   return (
@@ -304,7 +308,9 @@ export function ProjectVariablesPage({
 }): React.JSX.Element {
   const { projectId } = useParams();
   const project = summary?.projects.find((candidate) => candidate.id === projectId);
-  const environment = summary?.environments.find((candidate) => candidate.projectId === projectId);
+  const environment = summary?.environments.find(
+    (candidate) => candidate.projectId === projectId && candidate.kind === 'production',
+  );
   const [data, setData] = useState<Awaited<ReturnType<typeof getEnvironmentVariables>> | null>(
     null,
   );
@@ -499,8 +505,13 @@ export function ProjectLogsPage({
 }): React.JSX.Element {
   const { projectId } = useParams();
   const project = summary?.projects.find((candidate) => candidate.id === projectId);
-  const environment = summary?.environments.find((candidate) => candidate.projectId === projectId);
-  const latest = summary?.deployments.find((deployment) => deployment.projectId === projectId);
+  const environment = summary?.environments.find(
+    (candidate) => candidate.projectId === projectId && candidate.kind === 'production',
+  );
+  const latest = summary?.deployments.find(
+    (deployment) =>
+      deployment.projectId === projectId && deployment.environmentId === environment?.id,
+  );
   const [logs, setLogs] = useState<Awaited<ReturnType<typeof getBuildLogs>> | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -582,7 +593,9 @@ export function ProjectResourcesPage({
 }): React.JSX.Element {
   const { projectId } = useParams();
   const project = summary?.projects.find((candidate) => candidate.id === projectId);
-  const environment = summary?.environments.find((candidate) => candidate.projectId === projectId);
+  const environment = summary?.environments.find(
+    (candidate) => candidate.projectId === projectId && candidate.kind === 'production',
+  );
   const [resources, setResources] = useState<ManagedResource[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   useEffect(() => {
@@ -660,7 +673,9 @@ export function ProjectDomainsPage({
 }): React.JSX.Element {
   const { projectId } = useParams();
   const project = summary?.projects.find((candidate) => candidate.id === projectId);
-  const environment = summary?.environments.find((candidate) => candidate.projectId === projectId);
+  const environment = summary?.environments.find(
+    (candidate) => candidate.projectId === projectId && candidate.kind === 'production',
+  );
   const [domains, setDomains] = useState<WorkerDomain[]>([]);
   const [hostname, setHostname] = useState('');
   const [domainError, setDomainError] = useState<string | null>(null);
@@ -785,7 +800,9 @@ export function ProjectSettingsPage({
 }): React.JSX.Element {
   const { projectId } = useParams();
   const project = summary?.projects.find((candidate) => candidate.id === projectId);
-  const environment = summary?.environments.find((candidate) => candidate.projectId === projectId);
+  const environment = summary?.environments.find(
+    (candidate) => candidate.projectId === projectId && candidate.kind === 'production',
+  );
   if (!project) return <MissingProject />;
   return (
     <div className="project-page">
