@@ -86,6 +86,11 @@ export function AppShell({
     location.pathname.startsWith(`/projects/${candidate.id}`),
   );
   const currentPage = project?.name ?? pageNames[location.pathname] ?? 'WorkerDeck';
+  const userEmail = summary?.account.userEmail;
+  const userLabel = userEmail
+    ? displayNameFromEmail(userEmail)
+    : (summary?.account.name ?? 'WorkerDeck');
+  const userInitials = initialsFromLabel(userLabel);
 
   return (
     <div className="app-shell">
@@ -125,10 +130,13 @@ export function AppShell({
           </a>
         </nav>
         <div className="sidebar-profile">
-          <span className="profile-avatar">AO</span>
+          <span className="profile-avatar">{userInitials}</span>
           <span>
-            <strong>Account owner</strong>
-            <small>{summary?.account.connected ? 'Connected' : 'Setup required'}</small>
+            <strong>{userLabel}</strong>
+            <small>
+              {userEmail ??
+                (summary?.account.connected ? 'Cloudflare connected' : 'Local development')}
+            </small>
           </span>
           <span className="presence-dot" />
         </div>
@@ -189,5 +197,24 @@ export function AppShell({
 
       <CommandMenu open={commandOpen} onClose={() => setCommandOpen(false)} summary={summary} />
     </div>
+  );
+}
+
+function displayNameFromEmail(email: string): string {
+  const localPart = email.split('@')[0] ?? email;
+  return localPart
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(' ');
+}
+
+function initialsFromLabel(label: string): string {
+  const parts = label.trim().split(/\s+/).filter(Boolean);
+  return (
+    parts
+      .slice(0, 2)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join('') || 'WD'
   );
 }

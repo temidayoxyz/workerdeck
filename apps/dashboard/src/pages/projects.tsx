@@ -1,5 +1,5 @@
 import type { DashboardSummary } from '@workerdeck/contracts';
-import { AlertCircle, Github, Plus, Rocket } from '../components/icon';
+import { AlertCircle, Github, Rocket } from '../components/icon';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { relativeTime, titleCase } from '../lib/format';
@@ -29,10 +29,6 @@ export function ProjectsPage({
           <h1>Projects</h1>
           <p>Repositories, environments, and their Cloudflare runtime targets.</p>
         </div>
-        <Link className="button button--primary" to="/projects/new">
-          <Plus size={16} />
-          New project
-        </Link>
       </section>
       <section className="panel catalog-panel">
         {deployError ? (

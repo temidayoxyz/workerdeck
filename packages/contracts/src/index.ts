@@ -100,6 +100,7 @@ export const dashboardSummarySchema = z.object({
   account: z.object({
     id: z.string().nullable(),
     name: z.string(),
+    userEmail: z.string().email().nullable(),
     plan: z.enum(['free', 'paid', 'unknown']),
     connected: z.boolean(),
   }),

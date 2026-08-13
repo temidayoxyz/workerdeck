@@ -53,6 +53,7 @@ app.get('/api/v1/dashboard', async (context) => {
   const summary = await repository.dashboard({
     id: context.env.CLOUDFLARE_ACCOUNT_ID ?? null,
     name: context.env.CLOUDFLARE_ACCOUNT_NAME,
+    userEmail: actorEmail(context.get('actor')),
     plan: 'unknown',
     connected: Boolean(context.env.CLOUDFLARE_API_TOKEN && context.env.CLOUDFLARE_ACCOUNT_ID),
   });
@@ -1524,9 +1525,14 @@ async function dashboardSummary(context: Context<AppEnv>): Promise<DashboardSumm
   return new Repository(context.env.DB).dashboard({
     id: context.env.CLOUDFLARE_ACCOUNT_ID ?? null,
     name: context.env.CLOUDFLARE_ACCOUNT_NAME,
+    userEmail: actorEmail(context.get('actor')),
     plan: 'unknown',
     connected: Boolean(context.env.CLOUDFLARE_API_TOKEN && context.env.CLOUDFLARE_ACCOUNT_ID),
   });
+}
+
+function actorEmail(actor: string): string | null {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(actor) ? actor : null;
 }
 
 function analyticsRange(context: Context<AppEnv>): { from: string; to: string } {

@@ -4,7 +4,13 @@ const now = Date.now();
 const minutesAgo = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
 
 export const demoSummary: DashboardSummary = {
-  account: { id: 'account_demo', name: 'Temidayo Cloud', plan: 'free', connected: true },
+  account: {
+    id: 'account_demo',
+    name: 'Temidayo Cloud',
+    userEmail: 'temidayoxyz@gmail.com',
+    plan: 'free',
+    connected: true,
+  },
   projects: [
     {
       id: 'f7a042f3-d7e7-43a5-8969-7b7cda7d1c88',
