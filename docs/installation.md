@@ -59,19 +59,21 @@ account that will host WorkerDeck.
 
 ### Control-plane token
 
-Create a custom token named `WorkerDeck control plane` with these account permissions:
+Create a custom token named `WorkerDeck control plane` with these permissions:
 
-| Permission                   | Access | Used for                                                  |
-| ---------------------------- | ------ | --------------------------------------------------------- |
-| Workers Builds Configuration | Edit   | Connections, triggers, builds, and build variables        |
-| Workers Scripts              | Edit   | Worker bootstrap, runtime secrets, versions, and rollback |
-| Account Analytics            | Read   | Worker request, error, subrequest, and CPU metrics        |
-| D1                           | Edit   | Owned database provisioning and Time Travel verification  |
-| Workers KV Storage           | Edit   | Owned KV namespace provisioning                           |
-| Workers R2 Storage           | Edit   | Owned R2 bucket provisioning                              |
+| Scope   | Permission                   | Access | Used for                                                   |
+| ------- | ---------------------------- | ------ | ---------------------------------------------------------- |
+| Account | Workers Builds Configuration | Edit   | Connections, triggers, builds, and build variables         |
+| Account | Workers Scripts              | Edit   | Worker bootstrap, runtime secrets, versions, and rollback  |
+| Account | Account Analytics            | Read   | Worker request, error, subrequest, and CPU metrics         |
+| Account | D1                           | Edit   | Owned database provisioning and Time Travel verification   |
+| Account | Workers KV Storage           | Edit   | Owned KV namespace provisioning                            |
+| Account | Workers R2 Storage           | Edit   | Owned R2 bucket provisioning                               |
+| Zone    | Workers Routes               | Edit   | Attach the WorkerDeck custom domain and managed DNS record |
 
-Only include resource types that will be enabled. Token resource scope should include the selected
-account only.
+Only include resource types that will be enabled. Restrict account resources to the selected account
+and zone resources to the zone containing the WorkerDeck hostname. `User Details — Read` is optional;
+it only allows Wrangler to display the token owner's email during bootstrap.
 
 ### Application build token
 

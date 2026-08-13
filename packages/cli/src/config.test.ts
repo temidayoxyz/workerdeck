@@ -48,4 +48,25 @@ describe('createInstallConfig', () => {
       }),
     ).toThrow('Dashboard origin must be an HTTPS origin');
   });
+
+  it('preserves an already-provisioned D1 database during an installation retry', () => {
+    const config = createInstallConfig({
+      repositoryRoot: '/src/workerdeck',
+      workerName: 'workerdeck-control-plane',
+      accountId: 'account-id',
+      accountName: 'Example account',
+      buildTokenId: 'build-token-id',
+      dashboardOrigin: 'https://deck.example.com',
+      accessTeamDomain: 'example.cloudflareaccess.com',
+      accessAudience: 'audience',
+      githubAppId: '123456',
+      githubAppSlug: 'workerdeck-example',
+      databaseId: 'eb051260-d2cc-4350-9fa3-ea0f5684c2d2',
+    });
+
+    expect(config).toHaveProperty(
+      'd1_databases.0.database_id',
+      'eb051260-d2cc-4350-9fa3-ea0f5684c2d2',
+    );
+  });
 });

@@ -13,8 +13,22 @@ const program = new Command()
   .description('Install and operate WorkerDeck in your Cloudflare account.')
   .version('0.0.0');
 
-const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+const npmCommand =
+  process.platform === 'win32'
+    ? {
+        command: process.execPath,
+        args: [
+          path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+        ],
+      }
+    : { command: 'npm', args: [] };
+
+function wranglerCommand(root: string) {
+  return {
+    command: process.execPath,
+    args: [path.join(root, 'node_modules', 'wrangler', 'bin', 'wrangler.js')],
+  };
+}
 
 program
   .command('doctor')
@@ -22,7 +36,8 @@ program
   .action(async () => {
     prompts.intro(pc.bgBlue(pc.white(' WorkerDeck doctor ')));
     try {
-      await run(npxCommand, ['wrangler', '--version'], process.cwd());
+      const wrangler = wranglerCommand(process.cwd());
+      await run(wrangler.command, [...wrangler.args, '--version'], process.cwd());
       prompts.outro(
         'Wrangler is available. Run `workerdeck install` when your Access application is ready.',
       );
@@ -105,47 +120,62 @@ program
       const githubPrivateKey = await readGithubPrivateKey(options.githubAppPrivateKeyFile);
       const buildTokenId = await verifyCloudflareToken(cloudflareBuildToken);
       await verifyCloudflareToken(cloudflareApiToken);
-      const config = createInstallConfig({ repositoryRoot: root, ...options, buildTokenId });
+      const databaseId = await readExistingDatabaseId(
+        configPath,
+        options.accountId,
+        options.workerName,
+      );
+      const config = createInstallConfig({
+        repositoryRoot: root,
+        ...options,
+        buildTokenId,
+        ...(databaseId ? { databaseId } : {}),
+      });
       await writeGeneratedConfig(generatedDirectory, configPath, config);
       const cloudflareEnvironment = { CLOUDFLARE_API_TOKEN: cloudflareApiToken };
+      const wrangler = wranglerCommand(root);
 
       const spinner = prompts.spinner();
       try {
         spinner.start('Building the WorkerDeck dashboard');
-        await run(npmCommand, ['run', 'build', '-w', '@workerdeck/dashboard'], root);
+        await run(
+          npmCommand.command,
+          [...npmCommand.args, 'run', 'build', '-w', '@workerdeck/dashboard'],
+          root,
+        );
         spinner.stop('Dashboard built');
 
         prompts.log.step('Deploying the control plane and automatically provisioning D1');
-        await run(npxCommand, ['wrangler', 'deploy', '--config', configPath], root, {
+        await run(wrangler.command, [...wrangler.args, 'deploy', '--config', configPath], root, {
           env: cloudflareEnvironment,
         });
 
         prompts.log.step('Applying WorkerDeck database migrations');
         await run(
-          npxCommand,
-          ['wrangler', 'd1', 'migrations', 'apply', 'DB', '--remote', '--config', configPath],
+          wrangler.command,
+          [...wrangler.args, 'd1', 'migrations', 'apply', 'DB', '--remote', '--config', configPath],
           root,
           { env: cloudflareEnvironment },
         );
 
         prompts.log.step('Storing encrypted Worker secrets');
         await run(
-          npxCommand,
-          ['wrangler', 'secret', 'put', 'CLOUDFLARE_API_TOKEN', '--config', configPath],
+          wrangler.command,
+          [...wrangler.args, 'secret', 'put', 'CLOUDFLARE_API_TOKEN', '--config', configPath],
           root,
           { env: cloudflareEnvironment, input: cloudflareApiToken },
         );
 
         await run(
-          npxCommand,
-          ['wrangler', 'secret', 'put', 'CLOUDFLARE_BUILD_TOKEN', '--config', configPath],
+          wrangler.command,
+          [...wrangler.args, 'secret', 'put', 'CLOUDFLARE_BUILD_TOKEN', '--config', configPath],
           root,
           { env: cloudflareEnvironment, input: cloudflareBuildToken },
         );
 
         await run(
-          npxCommand,
-          ['wrangler', 'secret', 'put', 'GITHUB_APP_PRIVATE_KEY', '--config', configPath],
+          wrangler.command,
+          [...wrangler.args, 'secret', 'put', 'GITHUB_APP_PRIVATE_KEY', '--config', configPath],
           root,
           { env: cloudflareEnvironment, input: githubPrivateKey },
         );
@@ -206,6 +236,34 @@ async function readGithubPrivateKey(filePath: string): Promise<string> {
     throw new Error(`${resolvedPath} is not a valid private-key PEM file.`);
   }
   return value;
+}
+
+async function readExistingDatabaseId(
+  configPath: string,
+  accountId: string,
+  workerName: string,
+): Promise<string | undefined> {
+  let value: string;
+  try {
+    value = await readFile(configPath, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
+
+  const config = JSON.parse(value) as {
+    account_id?: unknown;
+    name?: unknown;
+    d1_databases?: Array<{ database_name?: unknown; database_id?: unknown }>;
+  };
+  if (config.account_id !== accountId || config.name !== workerName) return undefined;
+
+  const databaseId = config.d1_databases?.find(
+    (database) => database.database_name === 'workerdeck',
+  )?.database_id;
+  return typeof databaseId === 'string' && /^[0-9a-f-]{36}$/i.test(databaseId)
+    ? databaseId
+    : undefined;
 }
 
 async function writeGeneratedConfig(

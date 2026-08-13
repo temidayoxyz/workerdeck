@@ -11,6 +11,7 @@ export interface InstallConfigInput {
   accessAudience: string;
   githubAppId: string;
   githubAppSlug: string;
+  databaseId?: string;
 }
 
 export function createInstallConfig(input: InstallConfigInput): Record<string, unknown> {
@@ -58,6 +59,7 @@ export function createInstallConfig(input: InstallConfigInput): Record<string, u
         binding: 'DB',
         database_name: 'workerdeck',
         migrations_dir: relativeFromGenerated('apps/control-plane/migrations'),
+        ...(input.databaseId ? { database_id: input.databaseId } : {}),
       },
     ],
     assets: {
