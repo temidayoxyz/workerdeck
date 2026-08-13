@@ -655,6 +655,7 @@ export class Repository {
       .prepare(
         `SELECT
           p.id AS project_id,
+          p.framework,
           p.production_branch,
           production.worker_name,
           production.worker_tag,
