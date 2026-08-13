@@ -27,6 +27,7 @@ import { requestContext, securityHeaders, verifyMutationOrigin } from './securit
 import type { AppEnv } from './types';
 
 const app = new Hono<AppEnv>();
+const buildRepairRevision = 'framework-deployments-v1';
 
 app.use('*', requestContext);
 app.use('*', securityHeaders);
@@ -1270,6 +1271,7 @@ async function syncProviderBuilds(env: AppEnv['Bindings']): Promise<void> {
           requestId: crypto.randomUUID(),
         });
       }
+      await retryFailedProductionBuild(repository, client, target);
     }),
   );
   const failures = results.flatMap((result, index) => {
@@ -1298,6 +1300,59 @@ async function syncProviderBuilds(env: AppEnv['Bindings']): Promise<void> {
     targetCount: targets.length,
     failures,
   });
+}
+
+async function retryFailedProductionBuild(
+  repository: Repository,
+  client: CloudflareClient,
+  target: Awaited<ReturnType<Repository['nextBuildSyncTargets']>>[number],
+): Promise<void> {
+  if (!target.productionTriggerId) return;
+  const [latest, alreadyRetried] = await Promise.all([
+    repository.latestDeploymentForEnvironment(target.productionEnvironmentId),
+    repository.hasBuildRepairRetry(buildRepairRevision, target.projectId),
+  ]);
+  if (!latest || latest.status !== 'failed' || alreadyRetried) return;
+
+  const requestId = crypto.randomUUID();
+  const actor = 'repair@workerdeck';
+  const deployment = await repository.createDeployment(
+    target.projectId,
+    {
+      environmentId: target.productionEnvironmentId,
+      branch: target.productionBranch,
+      ...(latest.gitCommitSha ? { commitSha: latest.gitCommitSha } : {}),
+    },
+    actor,
+    requestId,
+  );
+  try {
+    const build = await client.triggerBuild(target.productionTriggerId, {
+      branch: target.productionBranch,
+      ...(latest.gitCommitSha ? { commitSha: latest.gitCommitSha } : {}),
+    });
+    await repository.attachBuild(deployment.id, build);
+    await repository.recordBuildRepairRetry({
+      revision: buildRepairRevision,
+      projectId: target.projectId,
+      deploymentId: deployment.id,
+      outcome: 'triggered',
+    });
+  } catch (error) {
+    await repository.failDeployment(
+      deployment.id,
+      error instanceof Error ? error.name : 'UNKNOWN_PROVIDER_ERROR',
+      actor,
+      requestId,
+    );
+    await repository.recordBuildRepairRetry({
+      revision: buildRepairRevision,
+      projectId: target.projectId,
+      deploymentId: deployment.id,
+      outcome: 'failed',
+    });
+    throw error;
+  }
 }
 
 async function providerSyncStep<T>(step: string, promise: Promise<T>): Promise<T> {

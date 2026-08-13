@@ -726,6 +726,45 @@ export class Repository {
       .run();
   }
 
+  async latestDeploymentForEnvironment(environmentId: string): Promise<Deployment | null> {
+    const row = await this.db
+      .prepare(
+        'SELECT * FROM deployments WHERE environment_id = ? ORDER BY created_at DESC LIMIT 1',
+      )
+      .bind(environmentId)
+      .first<DeploymentRow>();
+    return row ? toDeployment(row) : null;
+  }
+
+  async hasBuildRepairRetry(revision: string, projectId: string): Promise<boolean> {
+    const row = await this.db
+      .prepare('SELECT 1 AS found FROM settings WHERE key = ?')
+      .bind(`build_repair_retry:${revision}:${projectId}`)
+      .first<{ found: number }>();
+    return row?.found === 1;
+  }
+
+  async recordBuildRepairRetry(input: {
+    revision: string;
+    projectId: string;
+    deploymentId: string;
+    outcome: 'triggered' | 'failed';
+  }): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db
+      .prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
+      .bind(
+        `build_repair_retry:${input.revision}:${input.projectId}`,
+        JSON.stringify({
+          deploymentId: input.deploymentId,
+          outcome: input.outcome,
+          recordedAt: now,
+        }),
+        now,
+      )
+      .run();
+  }
+
   async recordProviderBuild(input: {
     target: BuildSyncTarget;
     build: WorkerBuild;
