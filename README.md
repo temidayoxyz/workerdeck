@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="./docs/assets/workerdeck-mark.svg" alt="WorkerDeck mark" width="92" />
+
 # WorkerDeck
 
 ### A self-hosted application control plane for Cloudflare
