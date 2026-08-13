@@ -1,6 +1,6 @@
 import type { DashboardSummary, ManagedResource, Project } from '@workerdeck/contracts';
 import { useCallback, useEffect, useState } from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { AppShell } from './components/app-shell';
 import {
   createDeployment,
@@ -13,6 +13,7 @@ import {
 } from './lib/api';
 import { DeploymentsPage } from './pages/deployments';
 import { NewProjectPage } from './pages/new-project';
+import { NotFoundPage } from './pages/not-found';
 import { BackupsPage, DomainsPage, ObservabilityPage, UsagePage } from './pages/operations';
 import { OverviewPage } from './pages/overview';
 import {
@@ -213,6 +214,10 @@ export function App(): React.JSX.Element {
           element={<ProjectSettingsPage summary={summary} onDeploy={handleDeploy} />}
         />
         <Route
+          path="projects/:projectId/settings/deployments"
+          element={<ProjectDeploymentsRedirect />}
+        />
+        <Route
           path="deployments"
           element={<DeploymentsPage summary={summary} onRollback={handleRollback} />}
         />
@@ -225,7 +230,14 @@ export function App(): React.JSX.Element {
         <Route path="backups" element={<BackupsPage summary={summary} />} />
         <Route path="usage" element={<UsagePage summary={summary} />} />
         <Route path="settings" element={<SettingsPage summary={summary} />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
   );
+}
+
+function ProjectDeploymentsRedirect(): React.JSX.Element {
+  const { projectId } = useParams();
+  const location = useLocation();
+  return <Navigate to={`/projects/${projectId ?? ''}/deployments${location.search}`} replace />;
 }

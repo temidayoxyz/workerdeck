@@ -932,7 +932,7 @@ export function ProjectSettingsPage({
               <code>{environment?.workerName}</code>
             </div>
           </div>
-          <Link className="button button--secondary" to="deployments">
+          <Link className="button button--secondary" to={`/projects/${project.id}/deployments`}>
             Deployment history
           </Link>
         </section>

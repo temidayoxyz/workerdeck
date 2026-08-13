@@ -1888,6 +1888,39 @@ select:focus-visible {
   color: var(--cyan);
   font-size: 9px;
 }
+.route-not-found {
+  max-width: 620px;
+  min-height: 430px;
+  margin: 7vh auto 0;
+  padding: 48px;
+}
+.route-not-found__icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 16px;
+  place-items: center;
+  color: var(--orange);
+  background: var(--orange-soft);
+  border: 1px solid rgb(255 107 0 / 20%);
+  border-radius: 7px;
+}
+.route-not-found .eyebrow {
+  color: var(--orange);
+}
+.route-not-found h1 {
+  margin: 8px 0 0;
+  font:
+    650 34px/1.08 'Archivo Variable',
+    sans-serif;
+}
+.route-not-found p {
+  max-width: 470px;
+  margin: 13px 0 24px;
+}
+.route-not-found .button {
+  color: #fff;
+}
 
 .wizard-intro {
   display: flex;
