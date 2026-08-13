@@ -27,7 +27,7 @@ import { requestContext, securityHeaders, verifyMutationOrigin } from './securit
 import type { AppEnv } from './types';
 
 const app = new Hono<AppEnv>();
-const buildRepairRevision = 'framework-deployments-v1';
+const buildRepairRevision = 'nonmutating-framework-builds-v2';
 
 app.use('*', requestContext);
 app.use('*', securityHeaders);
@@ -62,6 +62,87 @@ app.get('/api/v1/dashboard', async (context) => {
 app.get('/api/v1/projects', async (context) => {
   const projects = await new Repository(context.env.DB).listProjects();
   return context.json({ data: projects, requestId: context.get('requestId') });
+});
+
+app.delete('/api/v1/projects/:projectId', async (context) => {
+  const projectId = context.req.param('projectId');
+  const repository = new Repository(context.env.DB);
+  const plan = await repository.getProjectDeletionPlan(projectId);
+  const body = (await context.req.json().catch(() => null)) as { confirmation?: unknown } | null;
+  if (body?.confirmation !== plan.project.name) {
+    throw new AppError(
+      422,
+      'PROJECT_CONFIRMATION_MISMATCH',
+      `Enter ${plan.project.name} exactly to confirm deletion.`,
+    );
+  }
+  if (
+    plan.resources.some(
+      (resource) => !['worker', 'd1', 'kv', 'r2', 'domain'].includes(resource.kind),
+    )
+  ) {
+    throw new AppError(
+      409,
+      'PROJECT_RESOURCE_UNSUPPORTED',
+      'This project owns a resource type that WorkerDeck cannot safely delete yet.',
+    );
+  }
+  await repository.acquireProvisioningLock({
+    scope: 'project-delete',
+    key: projectId,
+    actor: context.get('actor'),
+    requestId: context.get('requestId'),
+  });
+  try {
+    const client = cloudflareClient(context);
+    const domains = plan.resources.filter((resource) => resource.kind === 'domain');
+    const storage = plan.resources.filter((resource) => ['d1', 'kv', 'r2'].includes(resource.kind));
+    const providerSteps: Array<{ label: string; run: () => Promise<void> }> = [
+      ...domains.map((resource) => ({
+        label: `domain:${resource.name}`,
+        run: () => client.detachWorkerDomain(resource.cloudflareId),
+      })),
+      ...plan.buildTriggerIds.map((triggerId) => ({
+        label: `build-trigger:${triggerId}`,
+        run: () => client.deleteBuildTrigger(triggerId),
+      })),
+      ...(plan.workerName
+        ? [{ label: `worker:${plan.workerName}`, run: () => client.deleteWorker(plan.workerName!) }]
+        : []),
+      ...storage.map((resource) => ({
+        label: `${resource.kind}:${resource.name}`,
+        run: () =>
+          resource.kind === 'd1'
+            ? client.deleteD1Database(resource.cloudflareId)
+            : resource.kind === 'kv'
+              ? client.deleteKvNamespace(resource.cloudflareId)
+              : client.deleteR2Bucket(resource.name),
+      })),
+    ];
+    const deleted: string[] = [];
+    for (const step of providerSteps) {
+      try {
+        await ignoreCloudflareNotFound(step.run);
+        deleted.push(step.label);
+      } catch (error) {
+        throw new AppError(
+          502,
+          'PROJECT_TEARDOWN_INCOMPLETE',
+          `Cloudflare could not delete ${step.label}. The project record was preserved so teardown can be retried.`,
+          { deleted, failed: step.label, cause: error instanceof Error ? error.name : 'unknown' },
+        );
+      }
+    }
+    await repository.deleteProjectRecord(
+      projectId,
+      context.get('actor'),
+      context.get('requestId'),
+      { deleted },
+    );
+    return context.json({ data: { deleted: true }, requestId: context.get('requestId') });
+  } finally {
+    await repository.releaseProvisioningLock('project-delete', projectId);
+  }
 });
 
 app.get('/api/v1/resources', async (context) => {
@@ -982,6 +1063,48 @@ app.get('/api/v1/deployments/:deploymentId/logs', async (context) => {
   });
 });
 
+app.delete('/api/v1/deployments/:deploymentId', async (context) => {
+  const repository = new Repository(context.env.DB);
+  const deployment = await repository.requireDeployment(context.req.param('deploymentId'));
+  if (['queued', 'building', 'deploying'].includes(deployment.status)) {
+    throw new AppError(
+      409,
+      'DEPLOYMENT_ACTIVE',
+      'Cancel or wait for this deployment to finish before deleting it.',
+    );
+  }
+  const target = await repository.getDeploymentTarget(
+    deployment.projectId,
+    deployment.environmentId,
+  );
+  if (deployment.workerVersionId) {
+    const client = cloudflareClient(context);
+    const providerDeployments = await client.listDeployments(target.workerName);
+    const current = providerDeployments[0];
+    if (current?.versions.some((version) => version.versionId === deployment.workerVersionId)) {
+      throw new AppError(
+        409,
+        'DEPLOYMENT_SERVING_TRAFFIC',
+        'The currently serving deployment cannot be deleted. Deploy or roll back first.',
+      );
+    }
+    const providerDeployment = providerDeployments.find((candidate) =>
+      candidate.versions.some((version) => version.versionId === deployment.workerVersionId),
+    );
+    if (providerDeployment) {
+      await ignoreCloudflareNotFound(() =>
+        client.deleteDeployment(target.workerName, providerDeployment.id),
+      );
+    }
+  }
+  await repository.deleteDeploymentRecord(
+    deployment.id,
+    context.get('actor'),
+    context.get('requestId'),
+  );
+  return context.json({ data: { deleted: true }, requestId: context.get('requestId') });
+});
+
 app.post('/api/v1/deployments/:deploymentId/sync', async (context) => {
   const repository = new Repository(context.env.DB);
   const deployment = await repository.requireDeployment(context.req.param('deploymentId'));
@@ -1371,6 +1494,15 @@ async function providerSyncStep<T>(step: string, promise: Promise<T>): Promise<T
     if (error instanceof CloudflareApiError) {
       throw new CloudflareApiError(`${step}: ${error.message}`, error.status, error.errors);
     }
+    throw error;
+  }
+}
+
+async function ignoreCloudflareNotFound(operation: () => Promise<void>): Promise<void> {
+  try {
+    await operation();
+  } catch (error) {
+    if (error instanceof CloudflareApiError && error.status === 404) return;
     throw error;
   }
 }

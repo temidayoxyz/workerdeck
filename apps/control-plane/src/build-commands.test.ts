@@ -41,15 +41,18 @@ describe('managedDeployCommand', () => {
 });
 
 describe('managedBuildCommand', () => {
-  it('configures an unconfigured Vite or static project before building it', () => {
+  it('builds a Vite project without mutating its repository configuration', () => {
     expect(managedBuildCommand('npm run build', 'vite')).toBe(
-      'npx wrangler setup --yes && npm run build',
+      'npm run build -- --configLoader runner',
+    );
+    expect(managedBuildCommand('npx wrangler setup --yes && npm run build', 'vite')).toBe(
+      'npm run build -- --configLoader runner',
     );
   });
 
-  it('configures, repairs, and builds Next.js with OpenNext', () => {
+  it('builds Next.js with OpenNext without running interactive setup in CI', () => {
     const command = managedBuildCommand('npm run build', 'next');
-    expect(command).toContain('npx wrangler setup --yes');
+    expect(command).not.toContain('wrangler setup');
     expect(command).toContain('WRANGLER_CI_OVERRIDE_NAME');
     expect(command).toContain('p.name=process.env.WRANGLER_CI_OVERRIDE_NAME');
     expect(command).toContain('npx opennextjs-cloudflare build');
@@ -61,5 +64,16 @@ describe('managedBuildCommand', () => {
     const command = managedBuildCommand('npm run build', 'vite');
     expect(managedBuildCommand(command, 'vite')).toBe(command);
     expect(workerNameBuildVariable).toBe('WRANGLER_CI_OVERRIDE_NAME');
+  });
+});
+
+describe('managed Vite deployment', () => {
+  it('deploys Vite output as static Worker assets without generated config', () => {
+    expect(managedDeployCommand('npx wrangler deploy', false, 'vite')).toBe(
+      'npx wrangler deploy --assets dist',
+    );
+    expect(managedDeployCommand('npx wrangler deploy', true, 'vite')).toBe(
+      'npx wrangler versions upload --assets dist',
+    );
   });
 });

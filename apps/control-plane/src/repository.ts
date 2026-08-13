@@ -68,6 +68,13 @@ export interface BuildSyncTarget {
   previewTriggerId: string | null;
 }
 
+export interface ProjectDeletionPlan {
+  project: Project;
+  workerName: string | null;
+  buildTriggerIds: string[];
+  resources: ManagedResource[];
+}
+
 interface DeploymentRow {
   id: string;
   project_id: string;
@@ -224,6 +231,137 @@ export class Repository {
       .bind(slug)
       .first<ProjectRow>();
     return row ? toProject(row) : null;
+  }
+
+  async requireProject(projectId: string): Promise<Project> {
+    const row = await this.db
+      .prepare('SELECT * FROM projects WHERE id = ?')
+      .bind(projectId)
+      .first<ProjectRow>();
+    if (!row) throw new AppError(404, 'PROJECT_NOT_FOUND', 'The project does not exist.');
+    return toProject(row);
+  }
+
+  async getProjectDeletionPlan(projectId: string): Promise<ProjectDeletionPlan> {
+    const project = await this.requireProject(projectId);
+    const [environments, resources, activeDeployments] = await Promise.all([
+      this.db
+        .prepare('SELECT * FROM environments WHERE project_id = ? ORDER BY created_at ASC')
+        .bind(projectId)
+        .all<EnvironmentRow>(),
+      this.db
+        .prepare(
+          'SELECT * FROM managed_resources WHERE project_id = ? AND deleted_at IS NULL ORDER BY created_at DESC',
+        )
+        .bind(projectId)
+        .all<ManagedResourceRow>(),
+      this.db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM deployments WHERE project_id = ? AND status IN ('queued', 'building', 'deploying')",
+        )
+        .bind(projectId)
+        .first<{ count: number }>(),
+    ]);
+    if (Number(activeDeployments?.count ?? 0) > 0) {
+      throw new AppError(
+        409,
+        'PROJECT_DEPLOYMENT_ACTIVE',
+        'Cancel or wait for active deployments before deleting this project.',
+      );
+    }
+    const managedWorkerNames = new Set(
+      resources.results
+        .filter((resource) => resource.kind === 'worker')
+        .map((resource) => resource.cloudflare_id),
+    );
+    const workerNames = [
+      ...new Set(
+        environments.results
+          .map((environment) => environment.worker_name)
+          .filter(
+            (name): name is string => Boolean(name) && managedWorkerNames.has(name as string),
+          ),
+      ),
+    ];
+    if (workerNames.length > 1) {
+      throw new AppError(
+        409,
+        'PROJECT_OWNERSHIP_AMBIGUOUS',
+        'WorkerDeck found multiple Workers for this project and will not delete them automatically.',
+      );
+    }
+    return {
+      project,
+      workerName: workerNames[0] ?? null,
+      buildTriggerIds: [
+        ...new Set(
+          environments.results
+            .map((environment) => environment.build_trigger_id)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ],
+      resources: resources.results.map(toManagedResource),
+    };
+  }
+
+  async deleteProjectRecord(
+    projectId: string,
+    actor: string,
+    requestId: string,
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    const project = await this.requireProject(projectId);
+    const now = new Date().toISOString();
+    await this.db.batch([
+      this.db
+        .prepare(
+          `UPDATE managed_resources
+           SET project_id = NULL, environment_id = NULL, deleted_at = COALESCE(deleted_at, ?)
+           WHERE project_id = ?`,
+        )
+        .bind(now, projectId),
+      this.db.prepare('DELETE FROM projects WHERE id = ?').bind(projectId),
+      this.db
+        .prepare(
+          `INSERT INTO audit_events (
+            id, actor, action, target_type, target_id, request_id, metadata_json, created_at
+          ) VALUES (?, ?, 'project.deleted', 'project', ?, ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          actor,
+          projectId,
+          requestId,
+          JSON.stringify({ name: project.name, slug: project.slug, ...metadata }),
+          now,
+        ),
+    ]);
+  }
+
+  async deleteDeploymentRecord(
+    deploymentId: string,
+    actor: string,
+    requestId: string,
+  ): Promise<void> {
+    const deployment = await this.requireDeployment(deploymentId);
+    const now = new Date().toISOString();
+    await this.db.batch([
+      this.db.prepare('DELETE FROM deployments WHERE id = ?').bind(deploymentId),
+      this.db
+        .prepare(
+          `INSERT INTO audit_events (
+            id, actor, action, target_type, target_id, request_id, metadata_json, created_at
+          ) VALUES (?, ?, 'deployment.deleted', 'deployment', ?, ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          actor,
+          deploymentId,
+          requestId,
+          JSON.stringify({ projectId: deployment.projectId, buildId: deployment.buildId }),
+          now,
+        ),
+    ]);
   }
 
   async acquireProvisioningLock(input: {

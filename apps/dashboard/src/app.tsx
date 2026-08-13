@@ -4,6 +4,8 @@ import { Route, Routes } from 'react-router-dom';
 import { AppShell } from './components/app-shell';
 import {
   createDeployment,
+  deleteDeployment,
+  deleteProject,
   getDashboard,
   isDemoMode,
   rollbackDeployment,
@@ -101,6 +103,23 @@ export function App(): React.JSX.Element {
     if (!isDemoMode()) await load();
   };
 
+  const handleProjectDeleted = async (projectId: string, confirmation: string) => {
+    await deleteProject(projectId, confirmation);
+    await load();
+  };
+
+  const handleDeploymentDeleted = async (deploymentId: string) => {
+    await deleteDeployment(deploymentId);
+    setSummary((current) =>
+      current
+        ? {
+            ...current,
+            deployments: current.deployments.filter((deployment) => deployment.id !== deploymentId),
+          }
+        : current,
+    );
+  };
+
   const handleDeploy = async (projectId: string, environmentId: string) => {
     const deployment = await createDeployment(projectId, environmentId);
     setSummary((current) =>
@@ -139,7 +158,16 @@ export function App(): React.JSX.Element {
 
   return (
     <Routes>
-      <Route element={<AppShell summary={summary} onProjectCreated={handleProjectCreated} />}>
+      <Route
+        element={
+          <AppShell
+            summary={summary}
+            onProjectCreated={handleProjectCreated}
+            onProjectDeleted={handleProjectDeleted}
+            onDeploymentDeleted={handleDeploymentDeleted}
+          />
+        }
+      >
         <Route
           index
           element={

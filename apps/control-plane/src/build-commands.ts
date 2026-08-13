@@ -9,10 +9,15 @@ const openNextIdentitySetup =
 export function managedBuildCommand(command: string, framework: ManagedFramework): string {
   if (framework === 'next') {
     if (command.includes(openNextIdentitySetup)) return command.trim();
-    return `${openNextIdentitySetup} && npx wrangler setup --yes && npx opennextjs-cloudflare build`;
+    return `${openNextIdentitySetup} && npx opennextjs-cloudflare build`;
   }
-  if (/\bwrangler\s+setup\s+--yes\b/.test(command)) return command.trim();
-  return `npx wrangler setup --yes && ${command.trim()}`;
+  const nonMutating = command
+    .replace(/(?:^|&&)\s*npx\s+wrangler\s+setup\s+--yes\s*&&\s*/g, '')
+    .trim();
+  if (framework === 'vite' && !/--configLoader\s+(?:runner|native)/.test(nonMutating)) {
+    return `${nonMutating} -- --configLoader runner`;
+  }
+  return nonMutating;
 }
 
 /**
@@ -32,10 +37,14 @@ export function managedDeployCommand(
     return preview ? 'npx wrangler versions upload' : command.trim();
   }
 
-  return command
+  const managed = command
     .replace(/\s+--name(?:=|\s+)(?:"[^"]*"|'[^']*'|\S+)/g, '')
     .replace(/\s+--yes\b/g, '')
     .replace(/\bwrangler\s+deploy\b/, `wrangler ${preview ? 'versions upload' : 'deploy'}`)
     .replace(/\s+/g, ' ')
     .trim();
+  if (framework === 'vite' && !/\s--assets(?:=|\s)/.test(managed)) {
+    return `${managed} --assets dist`;
+  }
+  return managed;
 }

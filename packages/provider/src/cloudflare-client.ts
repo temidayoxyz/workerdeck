@@ -854,6 +854,15 @@ export class CloudflareClient {
     );
   }
 
+  async deleteDeployment(scriptName: string, deploymentId: string): Promise<void> {
+    const accountId = this.#requireAccountId();
+    await this.#request(
+      `/accounts/${accountId}/workers/scripts/${encodeURIComponent(scriptName)}/deployments/${encodeURIComponent(deploymentId)}`,
+      z.unknown(),
+      { method: 'DELETE' },
+    );
+  }
+
   async deployVersion(scriptName: string, versionId: string, message: string): Promise<void> {
     const accountId = this.#requireAccountId();
     await this.#request(

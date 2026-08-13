@@ -10,6 +10,7 @@ import {
   Boxes,
   Cloud,
   Code2,
+  Copy,
   Database,
   ExternalLink,
   Github,
@@ -18,16 +19,16 @@ import {
   Globe2,
   KeyRound,
   LockKeyhole,
-  MoreHorizontal,
   Plus,
   RefreshCw,
   Rocket,
   Settings,
   ShieldCheck,
   Trash2,
+  X,
 } from '../components/icon';
-import { useEffect, useState } from 'react';
-import { Link, useOutletContext, useParams } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import type { ShellContext } from '../components/app-shell';
 import { DeploymentRail } from '../components/deployment-rail';
 import { ProjectHeader } from '../components/project-header';
@@ -246,6 +247,9 @@ export function ProjectDeploymentsPage({
   onDeploy: (projectId: string, environmentId: string) => Promise<void>;
 }): React.JSX.Element {
   const { projectId } = useParams();
+  const { deploymentDeleted } = useOutletContext<ShellContext>();
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const project = summary?.projects.find((candidate) => candidate.id === projectId);
   const environment = summary?.environments.find(
     (candidate) => candidate.projectId === projectId && candidate.kind === 'production',
@@ -266,6 +270,7 @@ export function ProjectDeploymentsPage({
         </div>
       </section>
       <section className="panel data-table">
+        {deleteError ? <div className="inline-alert">{deleteError}</div> : null}
         <div className="data-row data-row--header">
           <span>Status</span>
           <span>Version</span>
@@ -289,8 +294,35 @@ export function ProjectDeploymentsPage({
             <code>{deployment.gitBranch ?? project.productionBranch}</code>
             <span>{deployment.triggeredBy}</span>
             <span>{relativeTime(deployment.createdAt)}</span>
-            <button className="row-action" type="button" aria-label="Deployment actions">
-              <MoreHorizontal size={16} />
+            <button
+              className="row-action danger-action"
+              type="button"
+              aria-label="Delete deployment"
+              disabled={
+                deleting === deployment.id ||
+                ['queued', 'building', 'deploying'].includes(deployment.status)
+              }
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    'Delete this deployment record? WorkerDeck will also remove its historical Cloudflare Worker deployment when one exists. Cloudflare build logs follow Cloudflare retention.',
+                  )
+                )
+                  return;
+                setDeleting(deployment.id);
+                setDeleteError(null);
+                void deploymentDeleted(deployment.id)
+                  .catch((reason: unknown) =>
+                    setDeleteError(
+                      reason instanceof Error
+                        ? reason.message
+                        : 'The deployment could not be deleted.',
+                    ),
+                  )
+                  .finally(() => setDeleting(null));
+              }}
+            >
+              <Trash2 size={16} />
             </button>
           </div>
         ))}
@@ -514,6 +546,7 @@ export function ProjectLogsPage({
   );
   const [logs, setLogs] = useState<Awaited<ReturnType<typeof getBuildLogs>> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!latest) return;
     void getBuildLogs(latest.id)
@@ -536,20 +569,47 @@ export function ProjectLogsPage({
           <p>Immutable Workers Builds output for the latest deployment.</p>
         </div>
         {latest ? (
-          <button
-            className="button button--secondary"
-            type="button"
-            onClick={() =>
-              void getBuildLogs(latest.id)
-                .then(setLogs)
-                .catch((reason: unknown) =>
-                  setError(reason instanceof Error ? reason.message : 'Build logs could not load.'),
-                )
-            }
-          >
-            <RefreshCw size={15} />
-            Refresh
-          </button>
+          <div className="log-actions">
+            <button
+              className="button button--secondary"
+              type="button"
+              disabled={!logs?.lines.length}
+              onClick={() => {
+                const output = logs?.lines
+                  .map((line) =>
+                    `${line.timestamp ? new Date(line.timestamp > 1e12 ? line.timestamp : line.timestamp * 1000).toISOString() : ''}\t${line.message}`.trim(),
+                  )
+                  .join('\n');
+                if (!output) return;
+                void navigator.clipboard
+                  .writeText(output)
+                  .then(() => {
+                    setCopied(true);
+                    window.setTimeout(() => setCopied(false), 1800);
+                  })
+                  .catch(() => setError('The browser could not copy these logs.'));
+              }}
+            >
+              <Copy size={15} />
+              {copied ? 'Copied' : 'Copy logs'}
+            </button>
+            <button
+              className="button button--secondary"
+              type="button"
+              onClick={() =>
+                void getBuildLogs(latest.id)
+                  .then(setLogs)
+                  .catch((reason: unknown) =>
+                    setError(
+                      reason instanceof Error ? reason.message : 'Build logs could not load.',
+                    ),
+                  )
+              }
+            >
+              <RefreshCw size={15} />
+              Refresh
+            </button>
+          </div>
         ) : null}
       </section>
       <section className="panel build-log-panel">
@@ -799,6 +859,19 @@ export function ProjectSettingsPage({
   onDeploy: (projectId: string, environmentId: string) => Promise<void>;
 }): React.JSX.Element {
   const { projectId } = useParams();
+  const { projectDeleted } = useOutletContext<ShellContext>();
+  const navigate = useNavigate();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [confirmation, setConfirmation] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deleteDialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = deleteDialogRef.current;
+    if (!dialog) return;
+    if (deleteOpen && !dialog.open) dialog.showModal();
+    if (!deleteOpen && dialog.open) dialog.close();
+  }, [deleteOpen]);
   const project = summary?.projects.find((candidate) => candidate.id === projectId);
   const environment = summary?.environments.find(
     (candidate) => candidate.projectId === projectId && candidate.kind === 'production',
@@ -870,15 +943,110 @@ export function ProjectSettingsPage({
           <div>
             <h2>Delete project</h2>
             <p>
-              Deletion is intentionally disabled until owned-resource teardown can be planned and
-              confirmed as one auditable operation.
+              Permanently remove this project, its deployment history, and every Cloudflare resource
+              recorded as WorkerDeck-owned. The GitHub repository is never deleted.
             </p>
           </div>
-          <button className="button button--secondary" type="button" disabled>
+          <button
+            className="button button--danger"
+            type="button"
+            onClick={() => setDeleteOpen(true)}
+          >
+            <Trash2 size={15} />
             Delete project
           </button>
         </section>
       </div>
+      <dialog
+        ref={deleteDialogRef}
+        className="project-dialog delete-project-dialog"
+        onCancel={(event) => {
+          if (deleting) event.preventDefault();
+          else setDeleteOpen(false);
+        }}
+        onClose={() => {
+          if (!deleting) setDeleteOpen(false);
+        }}
+      >
+        <div className="dialog-heading">
+          <div>
+            <span className="eyebrow">Danger zone</span>
+            <h2>Delete {project.name}?</h2>
+            <p>
+              This cannot be undone. WorkerDeck will tear down its Cloudflare resources before
+              removing the project record.
+            </p>
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Close dialog"
+            disabled={deleting}
+            onClick={() => setDeleteOpen(false)}
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <form
+          className="project-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setDeleting(true);
+            setDeleteError(null);
+            void projectDeleted(project.id, confirmation)
+              .then(() => void navigate('/projects'))
+              .catch((reason: unknown) =>
+                setDeleteError(
+                  reason instanceof Error ? reason.message : 'The project could not be deleted.',
+                ),
+              )
+              .finally(() => setDeleting(false));
+          }}
+        >
+          <div className="deletion-impact">
+            <span className="deletion-impact__marker">
+              <Trash2 size={18} />
+            </span>
+            <span>
+              <strong>Cloudflare teardown manifest</strong>
+              <small>
+                Build triggers, the managed Worker, attached WorkerDeck domains, and owned D1/KV/R2
+                resources.
+              </small>
+            </span>
+          </div>
+          <label>
+            <span>
+              Enter <strong>{project.name}</strong> to confirm
+            </span>
+            <input
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              autoComplete="off"
+              autoFocus
+            />
+          </label>
+          {deleteError ? <div className="form-error">{deleteError}</div> : null}
+          <div className="dialog-actions">
+            <button
+              className="button button--secondary"
+              type="button"
+              disabled={deleting}
+              onClick={() => setDeleteOpen(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="button button--danger"
+              type="submit"
+              disabled={confirmation !== project.name || deleting}
+            >
+              <Trash2 size={15} />
+              {deleting ? 'Deleting project…' : 'Delete project'}
+            </button>
+          </div>
+        </form>
+      </dialog>
     </div>
   );
 }

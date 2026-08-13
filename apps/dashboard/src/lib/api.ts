@@ -163,6 +163,24 @@ export async function createDeployment(
   );
 }
 
+export async function deleteDeployment(deploymentId: string): Promise<void> {
+  if (isDemoMode()) return Promise.resolve();
+  await request(
+    `/api/v1/deployments/${encodeURIComponent(deploymentId)}`,
+    { method: 'DELETE' },
+    () => undefined,
+  );
+}
+
+export async function deleteProject(projectId: string, confirmation: string): Promise<void> {
+  if (isDemoMode()) return Promise.resolve();
+  await request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}`,
+    { method: 'DELETE', body: JSON.stringify({ confirmation }) },
+    () => undefined,
+  );
+}
+
 export async function syncDeployment(deploymentId: string): Promise<Deployment> {
   if (isDemoMode()) {
     throw new ApiError('DEMO_BUILD', 'Demo builds are not reconciled with Cloudflare.', 'demo');

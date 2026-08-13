@@ -49,14 +49,23 @@ const pageNames: Record<string, string> = {
 export interface ShellContext {
   summary: DashboardSummary | null;
   projectCreated: (project: Project) => Promise<void>;
+  projectDeleted: (projectId: string, confirmation: string) => Promise<void>;
+  deploymentDeleted: (deploymentId: string) => Promise<void>;
 }
 
 interface AppShellProps {
   summary: DashboardSummary | null;
   onProjectCreated: (project: Project) => Promise<void>;
+  onProjectDeleted: (projectId: string, confirmation: string) => Promise<void>;
+  onDeploymentDeleted: (deploymentId: string) => Promise<void>;
 }
 
-export function AppShell({ summary, onProjectCreated }: AppShellProps): React.JSX.Element {
+export function AppShell({
+  summary,
+  onProjectCreated,
+  onProjectDeleted,
+  onDeploymentDeleted,
+}: AppShellProps): React.JSX.Element {
   const [commandOpen, setCommandOpen] = useState(false);
   const [theme, toggleTheme] = useTheme();
   const location = useLocation();
@@ -165,7 +174,16 @@ export function AppShell({ summary, onProjectCreated }: AppShellProps): React.JS
           </div>
         </header>
         <div className="page-frame">
-          <Outlet context={{ summary, projectCreated: onProjectCreated } satisfies ShellContext} />
+          <Outlet
+            context={
+              {
+                summary,
+                projectCreated: onProjectCreated,
+                projectDeleted: onProjectDeleted,
+                deploymentDeleted: onDeploymentDeleted,
+              } satisfies ShellContext
+            }
+          />
         </div>
       </main>
 

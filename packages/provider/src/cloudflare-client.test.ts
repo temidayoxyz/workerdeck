@@ -35,6 +35,17 @@ describe('CloudflareClient', () => {
     expect(fetcher.mock.calls[0]?.[0]).toContain('/workers/scripts/worker%2Fname/deployments');
   });
 
+  it('deletes a non-current Worker deployment by its provider id', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response(null));
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(client.deleteDeployment('worker/name', 'deployment/id')).resolves.toBeUndefined();
+    expect(fetcher).toHaveBeenCalledOnce();
+    const [url, init] = fetcher.mock.calls[0]!;
+    expect(url).toContain('/workers/scripts/worker%2Fname/deployments/deployment%2Fid');
+    expect(init?.method).toBe('DELETE');
+  });
+
   it('triggers a pinned Workers Build without leaking the token into the body', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       response({

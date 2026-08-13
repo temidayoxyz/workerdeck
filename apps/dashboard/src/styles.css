@@ -450,6 +450,15 @@ select:focus-visible {
   background: var(--surface-raised);
   border-color: var(--line-strong);
 }
+.button--danger {
+  color: #fff;
+  background: var(--red);
+  border-color: var(--red);
+  box-shadow: 0 7px 20px rgb(255 98 98 / 14%);
+}
+.button--danger:hover:not(:disabled) {
+  filter: brightness(0.92);
+}
 .button--compact {
   min-height: 38px;
 }
@@ -928,6 +937,11 @@ select:focus-visible {
   color: var(--red);
   background: var(--red-soft);
 }
+.row-action:disabled,
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
 .activity-item {
   display: grid;
   min-height: 57px;
@@ -1120,7 +1134,7 @@ select:focus-visible {
   min-height: 64px;
   grid-template-columns:
     100px minmax(220px, 1.4fr) minmax(80px, 0.45fr) minmax(130px, 0.65fr)
-    85px 94px;
+    85px 140px;
   align-items: center;
   gap: 14px;
   padding: 0 18px;
@@ -1148,6 +1162,13 @@ select:focus-visible {
   margin-top: 3px;
   color: var(--ink-faint);
   font-size: 7px;
+}
+.deployment-actions,
+.log-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
 }
 .resource-catalog {
   display: grid;
@@ -3121,6 +3142,43 @@ select:focus-visible {
   color: var(--red);
   background: var(--red-soft);
   border-color: transparent;
+}
+.delete-project-dialog {
+  border-color: rgb(255 98 98 / 35%);
+  box-shadow:
+    0 0 0 1px rgb(255 98 98 / 8%),
+    0 32px 90px rgb(0 0 0 / 45%);
+}
+.delete-project-dialog .dialog-heading {
+  border-top: 3px solid var(--red);
+}
+.deletion-impact {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+  padding: 12px;
+  color: var(--red);
+  background: var(--red-soft);
+  border: 1px solid rgb(255 98 98 / 22%);
+  border-radius: 6px;
+}
+.deletion-impact__marker {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  background: rgb(255 98 98 / 10%);
+  border: 1px solid rgb(255 98 98 / 20%);
+  border-radius: 5px;
+}
+.deletion-impact strong,
+.deletion-impact small {
+  display: block;
+}
+.deletion-impact small {
+  margin-top: 3px;
+  color: var(--ink-soft);
 }
 
 @media (max-width: 1180px) {
