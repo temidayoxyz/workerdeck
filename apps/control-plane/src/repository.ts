@@ -706,6 +706,26 @@ export class Repository {
     }));
   }
 
+  async recordBuildSyncHealth(input: {
+    checkedAt: string;
+    targetCount: number;
+    failures: Array<{ projectId: string; message: string }>;
+  }): Promise<void> {
+    const value = JSON.stringify({
+      checkedAt: input.checkedAt,
+      targetCount: input.targetCount,
+      failureCount: input.failures.length,
+      failures: input.failures,
+    });
+    await this.db
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES ('build_sync_health', ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .bind(value, input.checkedAt)
+      .run();
+  }
+
   async recordProviderBuild(input: {
     target: BuildSyncTarget;
     build: WorkerBuild;

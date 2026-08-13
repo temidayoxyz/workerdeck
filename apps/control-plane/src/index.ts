@@ -1178,7 +1178,7 @@ async function syncProviderBuilds(env: AppEnv['Bindings']): Promise<void> {
     token: env.CLOUDFLARE_API_TOKEN,
     accountId: env.CLOUDFLARE_ACCOUNT_ID,
   });
-  await Promise.allSettled(
+  const results = await Promise.allSettled(
     targets.map(async (target) => {
       const [builds, versions, triggers] = await Promise.all([
         client.listBuilds(target.workerTag, 50),
@@ -1272,6 +1272,32 @@ async function syncProviderBuilds(env: AppEnv['Bindings']): Promise<void> {
       }
     }),
   );
+  const failures = results.flatMap((result, index) => {
+    if (result.status === 'fulfilled') return [];
+    const target = targets[index];
+    if (!target) return [];
+    const message =
+      result.reason instanceof CloudflareApiError
+        ? `Cloudflare API ${result.reason.status}`
+        : result.reason instanceof Error
+          ? result.reason.name
+          : 'Unknown provider error';
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        event: 'build_sync_failed',
+        projectId: target.projectId,
+        workerName: target.workerName,
+        message,
+      }),
+    );
+    return [{ projectId: target.projectId, message }];
+  });
+  await repository.recordBuildSyncHealth({
+    checkedAt: new Date().toISOString(),
+    targetCount: targets.length,
+    failures,
+  });
 }
 
 function cloudflareClient(context: Context<AppEnv>): CloudflareClient {
