@@ -139,7 +139,7 @@ export class CloudflareClient {
   constructor(options: CloudflareClientOptions) {
     this.#token = options.token;
     this.#accountId = options.accountId;
-    this.#fetcher = options.fetcher ?? fetch;
+    this.#fetcher = options.fetcher ?? ((...arguments_) => fetch(...arguments_));
     this.#baseUrl = options.baseUrl ?? 'https://api.cloudflare.com/client/v4';
   }
 

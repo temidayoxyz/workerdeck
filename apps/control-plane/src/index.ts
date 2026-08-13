@@ -5,6 +5,7 @@ import {
   createResourceInputSchema,
   environmentVariableKeySchema,
   rollbackDeploymentInputSchema,
+  repositoryInspectionSchema,
   upsertEnvironmentVariableInputSchema,
   type DashboardSummary,
   type RecoveryResource,
@@ -321,6 +322,31 @@ app.post('/api/v1/git/github/installations', async (context) => {
   );
 });
 
+app.post('/api/v1/git/github/installations/sync', async (context) => {
+  const client = githubAppClient(context);
+  const installations = await client.listInstallations();
+  const repository = new Repository(context.env.DB);
+  await Promise.all(
+    installations.map((installation) =>
+      repository.saveGitHubInstallation({
+        installationId: String(installation.id),
+        accountLogin: installation.account.login,
+        accountType: installation.account.type,
+        actor: context.get('actor'),
+        requestId: context.get('requestId'),
+      }),
+    ),
+  );
+  return context.json({
+    data: installations.map((installation) => ({
+      id: String(installation.id),
+      accountLogin: installation.account.login,
+      accountType: installation.account.type,
+    })),
+    requestId: context.get('requestId'),
+  });
+});
+
 app.get('/api/v1/git/github/repositories', async (context) => {
   const installations = await new Repository(context.env.DB).listGitHubInstallations();
   if (installations.length === 0) {
@@ -338,6 +364,30 @@ app.get('/api/v1/git/github/repositories', async (context) => {
     ...new Map(repositories.map((repository) => [repository.id, repository])).values(),
   ];
   return context.json({ data: unique, requestId: context.get('requestId') });
+});
+
+app.get('/api/v1/git/github/repositories/:repositoryId/inspection', async (context) => {
+  const repositoryId = context.req.param('repositoryId');
+  if (!/^\d{1,20}$/.test(repositoryId)) {
+    throw new AppError(422, 'INVALID_REPOSITORY', 'Choose a valid GitHub repository.');
+  }
+  const installations = await new Repository(context.env.DB).listGitHubInstallations();
+  const client = githubAppClient(context);
+  for (const installation of installations) {
+    const repositories = await client.listRepositories(installation.provider_installation_id);
+    const selected = repositories.find((repository) => repository.id === repositoryId);
+    if (!selected) continue;
+    const inspection = repositoryInspectionSchema.parse({
+      repositoryId,
+      ...(await client.inspectRepository(installation.provider_installation_id, selected)),
+    });
+    return context.json({ data: inspection, requestId: context.get('requestId') });
+  }
+  throw new AppError(
+    404,
+    'REPOSITORY_NOT_FOUND',
+    'This repository is not included in a connected GitHub App installation.',
+  );
 });
 
 app.post('/api/v1/resources', async (context) => {
@@ -518,10 +568,12 @@ app.post('/api/v1/projects', async (context) => {
     });
     let workerCreated = false;
     const triggerIds: string[] = [];
-    const productionDeployCommand =
-      parsed.data.deployCommand === 'npx wrangler deploy'
-        ? `npx wrangler deploy --name ${workerName}`
-        : parsed.data.deployCommand;
+    const productionDeployCommand = scopedWranglerCommand(
+      parsed.data.deployCommand,
+      workerName,
+      false,
+    );
+    const previewDeployCommand = scopedWranglerCommand(parsed.data.deployCommand, workerName, true);
     try {
       const worker = await client.bootstrapWorker(workerName, '2026-08-12');
       workerCreated = true;
@@ -544,7 +596,7 @@ app.post('/api/v1/projects', async (context) => {
         buildTokenId: buildToken.id,
         name: 'WorkerDeck previews',
         buildCommand: parsed.data.buildCommand,
-        deployCommand: `npx wrangler versions upload --name ${workerName}`,
+        deployCommand: previewDeployCommand,
         rootDirectory: parsed.data.rootDirectory,
         branchIncludes: ['*'],
         branchExcludes: [parsed.data.productionBranch],
@@ -560,6 +612,23 @@ app.post('/api/v1/projects', async (context) => {
           previewBuildTriggerId: previewTrigger.id,
         },
       );
+      try {
+        await client.triggerBuild(productionTrigger.id, {
+          branch: parsed.data.productionBranch,
+        });
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            requestId: context.get('requestId'),
+            message:
+              'Initial project build could not be started; the connected push trigger remains active.',
+            projectId: project.id,
+            triggerId: productionTrigger.id,
+            cause: error instanceof Error ? error.name : 'UNKNOWN_PROVIDER_ERROR',
+          }),
+        );
+      }
       await repository.storeIdempotentValue(
         idempotencyKey,
         context.get('actor'),
@@ -1291,6 +1360,17 @@ function githubAppClient(context: Context<AppEnv>): GitHubAppClient {
     );
   }
   return new GitHubAppClient(appId, privateKey);
+}
+
+function scopedWranglerCommand(command: string, workerName: string, preview: boolean): string {
+  if (!/\bwrangler\s+deploy\b/.test(command)) {
+    return preview ? `npx wrangler versions upload --name ${workerName}` : command;
+  }
+  const withoutWorkerName = command.replace(/\s+--name(?:=|\s+)\S+/g, '');
+  const scoped = withoutWorkerName
+    .replace(/\bwrangler\s+deploy\b/, `wrangler ${preview ? 'versions upload' : 'deploy'}`)
+    .replace(preview ? /\s+--yes\b/g : /$^/, '');
+  return `${scoped.trim()} --name ${workerName}`;
 }
 
 async function hashText(value: string): Promise<string> {

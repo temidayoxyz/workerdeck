@@ -1,5 +1,6 @@
 import { importPKCS8, SignJWT } from 'jose';
 import { z } from 'zod';
+import { detectFramework, type FrameworkDetection } from '@workerdeck/provider';
 import { AppError } from './errors';
 
 const installationSchema = z.object({
@@ -7,7 +8,10 @@ const installationSchema = z.object({
   account: z.object({ login: z.string(), type: z.string() }),
 });
 
+const installationsSchema = z.array(installationSchema);
+
 const repositoriesSchema = z.object({
+  total_count: z.number().int().nonnegative(),
   repositories: z.array(
     z.object({
       id: z.number().int().positive(),
@@ -23,11 +27,28 @@ const repositoriesSchema = z.object({
   ),
 });
 
+const treeSchema = z.object({
+  truncated: z.boolean().optional().default(false),
+  tree: z.array(
+    z.object({
+      path: z.string(),
+      type: z.enum(['blob', 'tree', 'commit']),
+      size: z.number().optional(),
+    }),
+  ),
+});
+
+const contentSchema = z.object({
+  type: z.literal('file'),
+  encoding: z.literal('base64'),
+  content: z.string(),
+});
+
 export class GitHubAppClient {
   constructor(
     private readonly appId: string,
     private readonly privateKey: string,
-    private readonly fetcher: typeof fetch = fetch,
+    private readonly fetcher: typeof fetch = (...arguments_) => fetch(...arguments_),
   ) {}
 
   async getInstallation(installationId: string) {
@@ -39,21 +60,23 @@ export class GitHubAppClient {
     );
   }
 
-  async listRepositories(installationId: string) {
-    const appJwt = await this.appJwt();
-    const tokenResponse = z
-      .object({ token: z.string(), expires_at: z.string() })
-      .parse(
-        await this.request(
-          `/app/installations/${encodeURIComponent(installationId)}/access_tokens`,
-          appJwt,
-          { method: 'POST', body: JSON.stringify({ permissions: { metadata: 'read' } }) },
-        ),
-      );
-    const result = repositoriesSchema.parse(
-      await this.request('/installation/repositories?per_page=100', tokenResponse.token),
+  async listInstallations() {
+    return installationsSchema.parse(
+      await this.request('/app/installations?per_page=100', await this.appJwt()),
     );
-    return result.repositories.map((repository) => ({
+  }
+
+  async listRepositories(installationId: string) {
+    const token = await this.installationToken(installationId, { metadata: 'read' });
+    const repositories: z.infer<typeof repositoriesSchema>['repositories'] = [];
+    for (let page = 1; page <= 10; page += 1) {
+      const result = repositoriesSchema.parse(
+        await this.request(`/installation/repositories?per_page=100&page=${page}`, token),
+      );
+      repositories.push(...result.repositories);
+      if (repositories.length >= result.total_count || result.repositories.length < 100) break;
+    }
+    return repositories.map((repository) => ({
       id: String(repository.id),
       ownerId: String(repository.owner.id),
       owner: repository.owner.login,
@@ -65,6 +88,122 @@ export class GitHubAppClient {
       language: repository.language,
       pushedAt: repository.pushed_at,
     }));
+  }
+
+  async inspectRepository(
+    installationId: string,
+    repository: { id: string; owner: string; name: string; defaultBranch: string },
+  ): Promise<FrameworkDetection & { rootDirectory: string }> {
+    const token = await this.installationToken(installationId, {
+      metadata: 'read',
+      contents: 'read',
+    });
+    const repositoryPath = `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
+    const tree = treeSchema.parse(
+      await this.request(
+        `${repositoryPath}/git/trees/${encodeURIComponent(repository.defaultBranch)}?recursive=1`,
+        token,
+      ),
+    );
+    const files = tree.tree
+      .filter((entry) => entry.type === 'blob')
+      .map((entry) => entry.path)
+      .slice(0, 20_000);
+    const packagePaths = files
+      .filter(
+        (file) => file === 'package.json' || /^(?:apps|packages)\/[^/]+\/package\.json$/.test(file),
+      )
+      .slice(0, 24);
+    const candidates = await Promise.all(
+      (packagePaths.length > 0 ? packagePaths : [null]).map(async (packagePath) => {
+        const rootDirectory = packagePath
+          ? packagePath.replace(/\/?package\.json$/, '') || '/'
+          : '/';
+        const rootedFiles = filesForRoot(files, rootDirectory);
+        const packageJson = packagePath
+          ? await this.readPackageJson(repositoryPath, packagePath, repository.defaultBranch, token)
+          : undefined;
+        return {
+          rootDirectory,
+          detection: detectFramework({
+            files: rootedFiles,
+            ...(packageJson ? { packageJson } : {}),
+          }),
+        };
+      }),
+    );
+    const ranked = candidates.sort(
+      (left, right) =>
+        detectionScore(right) - detectionScore(left) ||
+        left.rootDirectory.length - right.rootDirectory.length,
+    );
+    const selected = ranked[0] ?? {
+      rootDirectory: '/',
+      detection: detectFramework({ files }),
+    };
+    const supportedRoots = ranked.filter(
+      (candidate) => candidate.detection.framework !== 'unknown',
+    );
+    return {
+      ...selected.detection,
+      rootDirectory: selected.rootDirectory,
+      warnings: [
+        ...selected.detection.warnings,
+        ...(tree.truncated
+          ? ['GitHub truncated the repository tree; verify the detected root directory.']
+          : []),
+        ...(supportedRoots.length > 1
+          ? [
+              `Detected ${supportedRoots.length} deployable workspaces; selected ${selected.rootDirectory}.`,
+            ]
+          : []),
+      ],
+    };
+  }
+
+  private async readPackageJson(
+    repositoryPath: string,
+    packagePath: string,
+    branch: string,
+    token: string,
+  ) {
+    const value = contentSchema.parse(
+      await this.request(
+        `${repositoryPath}/contents/${packagePath.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(branch)}`,
+        token,
+      ),
+    );
+    const decoded = Uint8Array.from(atob(value.content.replace(/\s/g, '')), (character) =>
+      character.charCodeAt(0),
+    );
+    const parsed = z
+      .object({
+        dependencies: z.record(z.string(), z.string()).optional(),
+        devDependencies: z.record(z.string(), z.string()).optional(),
+        scripts: z.record(z.string(), z.string()).optional(),
+      })
+      .parse(JSON.parse(new TextDecoder().decode(decoded)));
+    return {
+      ...(parsed.dependencies ? { dependencies: parsed.dependencies } : {}),
+      ...(parsed.devDependencies ? { devDependencies: parsed.devDependencies } : {}),
+      ...(parsed.scripts ? { scripts: parsed.scripts } : {}),
+    };
+  }
+
+  private async installationToken(
+    installationId: string,
+    permissions: Record<string, 'read'>,
+  ): Promise<string> {
+    const result = z
+      .object({ token: z.string(), expires_at: z.string() })
+      .parse(
+        await this.request(
+          `/app/installations/${encodeURIComponent(installationId)}/access_tokens`,
+          await this.appJwt(),
+          { method: 'POST', body: JSON.stringify({ permissions }) },
+        ),
+      );
+    return result.token;
   }
 
   private async appJwt(): Promise<string> {
@@ -102,4 +241,20 @@ export class GitHubAppClient {
     }
     return payload;
   }
+}
+
+function filesForRoot(files: string[], rootDirectory: string): string[] {
+  if (rootDirectory === '/') return files;
+  const prefix = `${rootDirectory}/`;
+  return files.filter((file) => file.startsWith(prefix)).map((file) => file.slice(prefix.length));
+}
+
+function detectionScore(candidate: {
+  detection: FrameworkDetection;
+  rootDirectory: string;
+}): number {
+  const confidence = { high: 30, medium: 20, low: 0 }[candidate.detection.confidence];
+  return (
+    confidence + (candidate.detection.ready ? 10 : 0) + (candidate.rootDirectory === '/' ? 2 : 0)
+  );
 }

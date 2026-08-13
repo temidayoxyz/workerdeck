@@ -2,6 +2,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { createPrivateKey } from 'node:crypto';
 import * as prompts from '@clack/prompts';
 import { Command } from 'commander';
 import pc from 'picocolors';
@@ -235,7 +236,11 @@ async function readGithubPrivateKey(filePath: string): Promise<string> {
   ) {
     throw new Error(`${resolvedPath} is not a valid private-key PEM file.`);
   }
-  return value;
+  try {
+    return createPrivateKey(value).export({ type: 'pkcs8', format: 'pem' }).toString().trim();
+  } catch {
+    throw new Error(`${resolvedPath} could not be converted to a PKCS#8 private key.`);
+  }
 }
 
 async function readExistingDatabaseId(

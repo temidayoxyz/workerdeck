@@ -262,6 +262,22 @@ export const gitRepositorySchema = z.object({
   pushedAt: z.string().nullable(),
 });
 
+export const repositoryInspectionSchema = z.object({
+  repositoryId: z.string(),
+  framework: frameworkSchema,
+  displayName: z.string().min(1).max(80),
+  confidence: z.enum(['high', 'medium', 'low']),
+  evidence: z.array(z.string()),
+  rootDirectory: z.string(),
+  buildCommand: z.string(),
+  deployCommand: z.string(),
+  outputDirectory: z.string().nullable(),
+  runtime: z.enum(['worker', 'static']),
+  packageManager: z.enum(['npm', 'pnpm', 'yarn', 'bun', 'none']),
+  ready: z.boolean(),
+  warnings: z.array(z.string()),
+});
+
 export const buildLogSchema = z.object({
   timestamp: z.number().nullable(),
   message: z.string(),
@@ -361,6 +377,7 @@ export type UpsertEnvironmentVariableInput = z.infer<typeof upsertEnvironmentVar
 export type GitInstallation = z.infer<typeof gitInstallationSchema>;
 export type GitHubConnection = z.infer<typeof gitHubConnectionSchema>;
 export type GitRepository = z.infer<typeof gitRepositorySchema>;
+export type RepositoryInspection = z.infer<typeof repositoryInspectionSchema>;
 export type BuildLogs = z.infer<typeof buildLogsSchema>;
 export type WorkerAnalyticsPoint = z.infer<typeof workerAnalyticsPointSchema>;
 export type WorkerAnalyticsProject = z.infer<typeof workerAnalyticsProjectSchema>;

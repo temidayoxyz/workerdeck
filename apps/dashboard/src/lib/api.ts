@@ -8,6 +8,7 @@ import {
   gitHubConnectionSchema,
   gitInstallationSchema,
   gitRepositorySchema,
+  repositoryInspectionSchema,
   domainSchema,
   managedResourceSchema,
   recoveryPostureSchema,
@@ -25,6 +26,7 @@ import {
   type GitHubConnection,
   type GitInstallation,
   type GitRepository,
+  type RepositoryInspection,
   type WorkerDomain,
   type CreateResourceInput,
   type ManagedResource,
@@ -491,6 +493,20 @@ export async function registerGitHubInstallation(
   );
 }
 
+export async function syncGitHubInstallations(): Promise<GitInstallation[]> {
+  if (isDemoMode()) {
+    return Promise.resolve([{ id: '123456', accountLogin: 'acme', accountType: 'Organization' }]);
+  }
+  return request(
+    '/api/v1/git/github/installations/sync',
+    { method: 'POST', body: '{}' },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return gitInstallationSchema.array().parse(envelope.data);
+    },
+  );
+}
+
 export async function startGitHubSetup(): Promise<string> {
   if (isDemoMode()) {
     return Promise.resolve(
@@ -536,6 +552,34 @@ export async function getGitHubRepositories(): Promise<GitRepository[]> {
     const envelope = value as ApiSuccess<unknown>;
     return gitRepositorySchema.array().parse(envelope.data);
   });
+}
+
+export async function inspectGitHubRepository(repositoryId: string): Promise<RepositoryInspection> {
+  if (isDemoMode()) {
+    return Promise.resolve({
+      repositoryId,
+      framework: 'hono',
+      displayName: 'Hono',
+      confidence: 'high',
+      evidence: ['Found the `hono` package.', 'Found a Wrangler configuration.'],
+      rootDirectory: '/',
+      buildCommand: 'npm run build',
+      deployCommand: 'npx wrangler deploy --yes',
+      outputDirectory: null,
+      runtime: 'worker',
+      packageManager: 'npm',
+      ready: true,
+      warnings: [],
+    });
+  }
+  return request(
+    `/api/v1/git/github/repositories/${encodeURIComponent(repositoryId)}/inspection`,
+    { method: 'GET' },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return repositoryInspectionSchema.parse(envelope.data);
+    },
+  );
 }
 
 export async function getBuildLogs(deploymentId: string): Promise<BuildLogs> {

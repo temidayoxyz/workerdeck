@@ -157,9 +157,14 @@ export interface FrameworkDetectionInput {
 
 export interface FrameworkDetection {
   framework: Framework;
+  displayName: string;
   confidence: 'high' | 'medium' | 'low';
   evidence: string[];
   buildCommand: string;
   outputDirectory: string | null;
   runtime: 'worker' | 'static';
+  deployCommand: string;
+  packageManager: 'npm' | 'pnpm' | 'yarn' | 'bun' | 'none';
+  ready: boolean;
+  warnings: string[];
 }
