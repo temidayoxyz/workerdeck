@@ -1,4 +1,5 @@
 export const workerNameBuildVariable = 'WRANGLER_CI_OVERRIDE_NAME';
+export const managedCompatibilityDate = '2026-08-12';
 
 type ManagedFramework = 'static' | 'vite' | 'hono' | 'astro' | 'next' | 'unknown';
 
@@ -43,8 +44,11 @@ export function managedDeployCommand(
     .replace(/\bwrangler\s+deploy\b/, `wrangler ${preview ? 'versions upload' : 'deploy'}`)
     .replace(/\s+/g, ' ')
     .trim();
-  if (framework === 'vite' && !/\s--assets(?:=|\s)/.test(managed)) {
-    return `${managed} --assets dist`;
+  if (framework === 'vite' || framework === 'static') {
+    const assets = /\s--assets(?:=|\s)/.test(managed) ? managed : `${managed} --assets dist`;
+    return /\s--compatibility-date(?:=|\s)/.test(assets)
+      ? assets
+      : `${assets} --compatibility-date ${managedCompatibilityDate}`;
   }
   return managed;
 }

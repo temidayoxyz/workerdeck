@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  managedCompatibilityDate,
   managedBuildCommand,
   managedDeployCommand,
   workerNameBuildVariable,
@@ -14,8 +15,12 @@ describe('managedDeployCommand', () => {
 
   it('preserves static asset arguments while removing protected flags', () => {
     expect(
-      managedDeployCommand('npx wrangler deploy --assets dist --name=workerdeck-site --yes', false),
-    ).toBe('npx wrangler deploy --assets dist');
+      managedDeployCommand(
+        'npx wrangler deploy --assets dist --name=workerdeck-site --yes',
+        false,
+        'static',
+      ),
+    ).toBe(`npx wrangler deploy --assets dist --compatibility-date ${managedCompatibilityDate}`);
   });
 
   it('turns a production Wrangler command into a non-promoting preview upload', () => {
@@ -70,10 +75,20 @@ describe('managedBuildCommand', () => {
 describe('managed Vite deployment', () => {
   it('deploys Vite output as static Worker assets without generated config', () => {
     expect(managedDeployCommand('npx wrangler deploy', false, 'vite')).toBe(
-      'npx wrangler deploy --assets dist',
+      `npx wrangler deploy --assets dist --compatibility-date ${managedCompatibilityDate}`,
     );
     expect(managedDeployCommand('npx wrangler deploy', true, 'vite')).toBe(
-      'npx wrangler versions upload --assets dist',
+      `npx wrangler versions upload --assets dist --compatibility-date ${managedCompatibilityDate}`,
     );
+  });
+
+  it('preserves an explicit compatibility date', () => {
+    expect(
+      managedDeployCommand(
+        'npx wrangler deploy --assets dist --compatibility-date 2025-04-01',
+        false,
+        'vite',
+      ),
+    ).toBe('npx wrangler deploy --assets dist --compatibility-date 2025-04-01');
   });
 });

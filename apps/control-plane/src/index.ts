@@ -27,7 +27,7 @@ import { requestContext, securityHeaders, verifyMutationOrigin } from './securit
 import type { AppEnv } from './types';
 
 const app = new Hono<AppEnv>();
-const buildRepairRevision = 'nonmutating-framework-builds-v2';
+const buildRepairRevision = 'nonmutating-framework-builds-v3';
 
 app.use('*', requestContext);
 app.use('*', securityHeaders);
