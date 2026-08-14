@@ -1,6 +1,7 @@
 import type {
   DashboardSummary,
   ManagedResource,
+  ProjectCache,
   WebAnalytics,
   WorkerAnalyticsProject,
   WorkerDomain,
@@ -49,10 +50,16 @@ import {
   getBuildLogs,
   getEnvironmentVariables,
   getManagedResources,
+  getProjectCache,
   getProjectDomains,
   getWebAnalytics,
   getWorkerAnalytics,
+  purgeProjectCache,
+  revalidateProjectCache,
+  setProjectCacheRules,
+  setProjectCacheSettings,
   upsertEnvironmentVariable,
+  type CacheRuleInput,
 } from '../lib/api';
 import { relativeTime, shortSha, titleCase } from '../lib/format';
 import { frameworkLabel } from '../lib/framework-label';
@@ -1509,6 +1516,421 @@ export function ProjectCronPage({
   );
 }
 
+export function ProjectCachePage({
+  summary,
+  onDeploy,
+}: {
+  summary: DashboardSummary | null;
+  onDeploy: (projectId: string, environmentId: string) => Promise<void>;
+}): React.JSX.Element {
+  const { projectId } = useParams();
+  const project = summary?.projects.find((candidate) => candidate.id === projectId);
+  const environment = summary?.environments.find(
+    (candidate) => candidate.projectId === projectId && candidate.kind === 'production',
+  );
+  const [cache, setCache] = useState<ProjectCache | null>(null);
+  const [cacheStatus, setCacheStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+  const [draftPath, setDraftPath] = useState('');
+  const [draftEdgeTtl, setDraftEdgeTtl] = useState('3600');
+  const [draftBrowserTtl, setDraftBrowserTtl] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [purging, setPurging] = useState(false);
+  const [revalidating, setRevalidating] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!projectId || !environment) return;
+    let active = true;
+    setCacheStatus('loading');
+    void getProjectCache(projectId, environment.id)
+      .then((result) => {
+        if (!active) return;
+        setCache(result);
+        setCacheStatus('ready');
+      })
+      .catch(() => {
+        if (active) setCacheStatus('unavailable');
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId, environment?.id]);
+  if (!project) return <MissingProject />;
+  const ruleInputs = (rules: ProjectCache['rules']): CacheRuleInput[] =>
+    rules.map((rule) => ({
+      id: rule.id,
+      pathExpression: rule.pathExpression,
+      edgeTtlSeconds: rule.edgeTtlSeconds,
+      browserTtlSeconds: rule.browserTtlSeconds,
+      enabled: rule.enabled,
+    }));
+  const saveRules = (next: CacheRuleInput[]) => {
+    if (!environment) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    void setProjectCacheRules(project.id, environment.id, next)
+      .then((result) => {
+        setCache(result);
+        setNotice('Cache rules saved and synced.');
+      })
+      .catch((reason: unknown) =>
+        setError(reason instanceof Error ? reason.message : 'Cache rules could not be saved.'),
+      )
+      .finally(() => setSaving(false));
+  };
+  const addRule = () => {
+    const path = draftPath.trim();
+    if (!path.startsWith('/') || /\s/.test(path)) {
+      setError('Enter a path that starts with / and contains no spaces.');
+      return;
+    }
+    if (cache?.rules.some((rule) => rule.pathExpression === path)) {
+      setError('That path already has a cache rule.');
+      return;
+    }
+    const edgeTtl = Math.max(0, Math.min(2_592_000, Math.floor(Number(draftEdgeTtl) || 0)));
+    const browserTtl =
+      draftBrowserTtl.trim() === ''
+        ? null
+        : Math.max(0, Math.min(2_592_000, Math.floor(Number(draftBrowserTtl) || 0)));
+    saveRules([
+      ...ruleInputs(cache?.rules ?? []),
+      {
+        pathExpression: path,
+        edgeTtlSeconds: edgeTtl,
+        browserTtlSeconds: browserTtl,
+        enabled: true,
+      },
+    ]);
+    setDraftPath('');
+    setDraftEdgeTtl('3600');
+    setDraftBrowserTtl('');
+  };
+  const updateRule = (id: string, patch: Partial<CacheRuleInput>) => {
+    if (!cache) return;
+    saveRules(
+      ruleInputs(cache.rules).map((rule) => (rule.id === id ? { ...rule, ...patch } : rule)),
+    );
+  };
+  const deleteRule = (id: string) => {
+    if (!cache) return;
+    saveRules(ruleInputs(cache.rules).filter((rule) => rule.id !== id));
+  };
+  const chooseNamespace = (resourceId: string) => {
+    if (!environment) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    void setProjectCacheSettings(project.id, environment.id, resourceId || null)
+      .then((result) => {
+        setCache(result);
+        setNotice('Revalidation namespace saved.');
+      })
+      .catch((reason: unknown) =>
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : 'The revalidation namespace could not be saved.',
+        ),
+      )
+      .finally(() => setSaving(false));
+  };
+  const purge = () => {
+    if (!environment) return;
+    setPurging(true);
+    setError(null);
+    setNotice(null);
+    void purgeProjectCache(project.id, environment.id)
+      .then((zones) =>
+        setNotice(`Purged the cache for ${zones.length} ${zones.length === 1 ? 'zone' : 'zones'}.`),
+      )
+      .catch((reason: unknown) =>
+        setError(reason instanceof Error ? reason.message : 'The cache could not be purged.'),
+      )
+      .finally(() => setPurging(false));
+  };
+  const revalidate = (target: string) => {
+    if (!environment || !cache) return;
+    const paths = target === 'all' ? cache.rules.map((rule) => rule.pathExpression) : [target];
+    setRevalidating(target);
+    setError(null);
+    setNotice(null);
+    void revalidateProjectCache(project.id, environment.id, paths)
+      .then((hints) => {
+        setCache((current) =>
+          current
+            ? {
+                ...current,
+                revalidation: {
+                  ...current.revalidation,
+                  hints: current.revalidation.hints.map(
+                    (hint) =>
+                      hints.find((item) => item.pathExpression === hint.pathExpression) ?? hint,
+                  ),
+                },
+              }
+            : current,
+        );
+        setNotice(
+          target === 'all'
+            ? `Revalidation hints bumped for ${hints.length} ${hints.length === 1 ? 'path' : 'paths'}.`
+            : `Revalidated ${target}.`,
+        );
+      })
+      .catch((reason: unknown) =>
+        setError(
+          reason instanceof Error ? reason.message : 'The revalidation hint could not be written.',
+        ),
+      )
+      .finally(() => setRevalidating(null));
+  };
+  const hintFor = (path: string) =>
+    cache?.revalidation.hints.find((hint) => hint.pathExpression === path)?.revalidatedAt ?? null;
+  return (
+    <div className="project-page">
+      <ProjectHeader
+        project={project}
+        environment={environment}
+        onDeploy={() => environment && void onDeploy(project.id, environment.id)}
+      />
+      <section className="project-section-intro">
+        <div>
+          <h2>Cache &amp; ISR</h2>
+          <p>Zone cache rules, full-zone purge, and KV-backed revalidation hints.</p>
+        </div>
+        {error ? <div className="inline-alert">{error}</div> : null}
+        {notice ? <div className="cache-notice">{notice}</div> : null}
+      </section>
+      {cacheStatus === 'loading' ? (
+        <section className="panel cache-state-panel">
+          <p className="muted-copy">Loading cache controls…</p>
+        </section>
+      ) : cacheStatus === 'unavailable' ? (
+        <section className="panel cache-state-panel">
+          <AlertCircle size={20} />
+          <p>WorkerDeck could not load cache controls for this project.</p>
+        </section>
+      ) : cache ? (
+        <>
+          <section className="panel cache-rules-panel">
+            <div className="section-heading">
+              <h2>
+                Cache rules <span>· {cache.rules.length} active</span>
+              </h2>
+              <Cloud size={18} />
+            </div>
+            <div className="cache-rule-form">
+              <input
+                value={draftPath}
+                onChange={(event) => setDraftPath(event.target.value)}
+                placeholder="/blog/*"
+                aria-label="Path pattern"
+                maxLength={255}
+              />
+              <label>
+                <span>Edge TTL (s)</span>
+                <input
+                  value={draftEdgeTtl}
+                  onChange={(event) => setDraftEdgeTtl(event.target.value)}
+                  type="number"
+                  min={0}
+                  max={2_592_000}
+                  inputMode="numeric"
+                />
+              </label>
+              <label>
+                <span>Browser TTL (s)</span>
+                <input
+                  value={draftBrowserTtl}
+                  onChange={(event) => setDraftBrowserTtl(event.target.value)}
+                  type="number"
+                  min={0}
+                  max={2_592_000}
+                  inputMode="numeric"
+                  placeholder="origin"
+                />
+              </label>
+              <button
+                className="button button--secondary"
+                type="button"
+                disabled={!draftPath.trim() || saving || cache.rules.length >= 25}
+                onClick={addRule}
+              >
+                <Plus size={15} /> Add rule
+              </button>
+            </div>
+            <div className="cache-rule-list">
+              {cache.rules.map((rule) => {
+                const hint = hintFor(rule.pathExpression);
+                return (
+                  <div className="cache-rule-row" key={rule.id}>
+                    <label className="cache-rule-enable">
+                      <input
+                        type="checkbox"
+                        checked={rule.enabled}
+                        disabled={saving}
+                        onChange={(event) => updateRule(rule.id, { enabled: event.target.checked })}
+                      />
+                      <span>{rule.enabled ? 'Enabled' : 'Paused'}</span>
+                    </label>
+                    <span className="cache-rule-path">
+                      <code>{rule.pathExpression}</code>
+                      <small>
+                        {rule.edgeTtlSeconds === 0
+                          ? 'Bypass cache'
+                          : formatCacheTtl(rule.edgeTtlSeconds)}{' '}
+                        edge
+                        {rule.browserTtlSeconds !== null
+                          ? ` · ${formatCacheTtl(rule.browserTtlSeconds)} browser`
+                          : ' · origin browser TTL'}
+                      </small>
+                    </span>
+                    <span
+                      className={`cache-sync-state${rule.syncError ? ' cache-sync-state--error' : ''}`}
+                    >
+                      {rule.syncError ? (
+                        <span title={rule.syncError}>Not synced</span>
+                      ) : rule.syncedAt ? (
+                        <span>Synced {relativeTime(rule.syncedAt)}</span>
+                      ) : (
+                        <span>Saved locally</span>
+                      )}
+                    </span>
+                    <button
+                      className="button button--secondary cache-revalidate-button"
+                      type="button"
+                      disabled={
+                        !cache.revalidation.namespaceResourceId || saving || revalidating !== null
+                      }
+                      onClick={() => void revalidate(rule.pathExpression)}
+                    >
+                      <RefreshCw size={14} />
+                      {hint ? `Revalidated ${relativeTime(hint)}` : 'Revalidate'}
+                    </button>
+                    <button
+                      className="row-action danger-action"
+                      type="button"
+                      aria-label={`Remove ${rule.pathExpression}`}
+                      disabled={saving}
+                      onClick={() => deleteRule(rule.id)}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                );
+              })}
+              {cache.rules.length === 0 ? (
+                <p className="muted-copy">
+                  No cache rules. Add a path to start overriding Cloudflare cache behavior.
+                </p>
+              ) : null}
+            </div>
+          </section>
+          <div className="cache-side-grid">
+            <section className="panel cache-zones-panel">
+              <div className="section-heading">
+                <h2>
+                  Purge <span>· proxied zones</span>
+                </h2>
+                <Globe2 size={18} />
+              </div>
+              {cache.zones.length === 0 ? (
+                <p className="muted-copy">
+                  No custom domains with a proxied zone. Cache Rules and purge apply to zone
+                  traffic, not workers.dev subdomains.
+                </p>
+              ) : (
+                <div className="cache-zone-list">
+                  {cache.zones.map((zone) => (
+                    <div key={zone.zoneId}>
+                      <span>
+                        <strong>{zone.zoneName}</strong>
+                        <small>{zone.hostnames.join(', ')}</small>
+                      </span>
+                      <i />
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="cache-panel-footer">
+                <button
+                  className="button button--danger"
+                  type="button"
+                  disabled={purging || cache.zones.length === 0}
+                  onClick={purge}
+                >
+                  <RefreshCw size={15} />
+                  {purging ? 'Purging…' : 'Purge entire cache'}
+                </button>
+              </div>
+            </section>
+            <section className="panel cache-revalidation-panel">
+              <div className="section-heading">
+                <h2>
+                  Revalidation <span>· KV hints</span>
+                </h2>
+                <Database size={18} />
+              </div>
+              <div className="revalidation-namespace">
+                <label>
+                  <span>Hint namespace</span>
+                  <select
+                    value={cache.revalidation.namespaceResourceId ?? ''}
+                    disabled={saving}
+                    onChange={(event) => chooseNamespace(event.target.value)}
+                  >
+                    <option value="">Choose a KV namespace…</option>
+                    {cache.revalidation.availableNamespaces.map((namespace) => (
+                      <option key={namespace.resourceId} value={namespace.resourceId}>
+                        {namespace.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {cache.revalidation.availableNamespaces.length === 0 ? (
+                  <Link className="environment-callout" to={`/projects/${project.id}/resources`}>
+                    <span>
+                      <Database size={17} />
+                      <strong>No KV namespace</strong>
+                      <small>Create one before enabling hints</small>
+                    </span>
+                    <ArrowRight size={16} />
+                  </Link>
+                ) : null}
+              </div>
+              {cache.revalidation.namespaceResourceId ? (
+                <>
+                  <button
+                    className="button button--secondary revalidate-all-button"
+                    type="button"
+                    disabled={saving || revalidating !== null || cache.rules.length === 0}
+                    onClick={() => void revalidate('all')}
+                  >
+                    <RefreshCw size={15} />
+                    {revalidating === 'all' ? 'Writing hints…' : 'Revalidate all paths'}
+                  </button>
+                  <div className="cache-snippet">
+                    <span>Worker read convention</span>
+                    <code>
+                      {`const gen = await env.${cache.revalidation.namespaceName}.get('workerdeck:revalidate:generation');`}
+                    </code>
+                  </div>
+                </>
+              ) : (
+                <p className="muted-copy">
+                  Choose a KV namespace to write revalidation hints your Worker can read at the
+                  edge. The generation key bumps on every revalidation.
+                </p>
+              )}
+            </section>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function MissingProject(): React.JSX.Element {
   const { summary } = useOutletContext<ShellContext>();
   return (
@@ -1562,6 +1984,13 @@ function percent(value: number): string {
 
 function duration(value: number | null): string {
   return value === null ? '—' : `${value.toFixed(value >= 10 ? 0 : 1)}ms`;
+}
+
+function formatCacheTtl(seconds: number): string {
+  if (seconds >= 86_400 && seconds % 86_400 === 0) return `${seconds / 86_400}d`;
+  if (seconds >= 3_600 && seconds % 3_600 === 0) return `${seconds / 3_600}h`;
+  if (seconds >= 60 && seconds % 60 === 0) return `${seconds / 60}m`;
+  return `${seconds}s`;
 }
 
 type WebVitalMetric = {

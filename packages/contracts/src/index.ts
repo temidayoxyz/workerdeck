@@ -531,6 +531,77 @@ export const webAnalyticsSchema = z.object({
   topPaths: z.array(webAnalyticsTopPathSchema),
 });
 
+export const cachePathPatternSchema = z
+  .string()
+  .min(2)
+  .max(255)
+  .regex(
+    /^\/[A-Za-z0-9\-_.*]{1,254}$/,
+    'Use a URL path starting with / containing letters, numbers, dashes, dots, or a trailing *.',
+  );
+
+export const cacheRuleSchema = z.object({
+  id: z.uuid(),
+  pathExpression: cachePathPatternSchema,
+  edgeTtlSeconds: z.number().int().min(0).max(2_592_000),
+  browserTtlSeconds: z.number().int().min(0).max(2_592_000).nullable(),
+  enabled: z.boolean(),
+  syncedAt: isoDateSchema.nullable(),
+  syncError: z.string().max(500).nullable(),
+});
+
+export const setCacheRulesInputSchema = z.object({
+  rules: z
+    .array(
+      z.object({
+        id: z.uuid().optional(),
+        pathExpression: cachePathPatternSchema,
+        edgeTtlSeconds: z.number().int().min(0).max(2_592_000),
+        browserTtlSeconds: z.number().int().min(0).max(2_592_000).nullable(),
+        enabled: z.boolean(),
+      }),
+    )
+    .max(25),
+});
+
+export const cacheSettingsInputSchema = z.object({
+  revalidationNamespaceResourceId: z.uuid().nullable(),
+});
+
+export const purgeCacheInputSchema = z.object({
+  scope: z.literal('all'),
+});
+
+export const revalidateCacheInputSchema = z.object({
+  paths: z.array(cachePathPatternSchema).min(1).max(25),
+});
+
+export const cacheZoneSchema = z.object({
+  zoneId: z.string().min(1).max(64),
+  zoneName: z.string().min(1).max(253),
+  hostnames: z.array(z.string().min(1).max(253)),
+});
+
+export const cacheRevalidationHintSchema = z.object({
+  pathExpression: cachePathPatternSchema,
+  revalidatedAt: isoDateSchema.nullable(),
+});
+
+export const cacheRevalidationSchema = z.object({
+  namespaceResourceId: z.uuid().nullable(),
+  namespaceName: z.string().min(1).max(255).nullable(),
+  availableNamespaces: z.array(
+    z.object({ resourceId: z.uuid(), name: z.string().min(1).max(255) }),
+  ),
+  hints: z.array(cacheRevalidationHintSchema),
+});
+
+export const projectCacheSchema = z.object({
+  rules: z.array(cacheRuleSchema),
+  zones: z.array(cacheZoneSchema),
+  revalidation: cacheRevalidationSchema,
+});
+
 export const recoveryResourceSchema = z.object({
   resourceId: z.uuid(),
   databaseId: z.string().min(1).max(255),
@@ -595,6 +666,15 @@ export type WorkerAnalytics = z.infer<typeof workerAnalyticsSchema>;
 export type WebVitals = z.infer<typeof webVitalsSchema>;
 export type WebAnalyticsTopPath = z.infer<typeof webAnalyticsTopPathSchema>;
 export type WebAnalytics = z.infer<typeof webAnalyticsSchema>;
+export type CacheRule = z.infer<typeof cacheRuleSchema>;
+export type SetCacheRulesInput = z.infer<typeof setCacheRulesInputSchema>;
+export type CacheSettingsInput = z.infer<typeof cacheSettingsInputSchema>;
+export type PurgeCacheInput = z.infer<typeof purgeCacheInputSchema>;
+export type RevalidateCacheInput = z.infer<typeof revalidateCacheInputSchema>;
+export type CacheZone = z.infer<typeof cacheZoneSchema>;
+export type CacheRevalidationHint = z.infer<typeof cacheRevalidationHintSchema>;
+export type CacheRevalidation = z.infer<typeof cacheRevalidationSchema>;
+export type ProjectCache = z.infer<typeof projectCacheSchema>;
 export type RecoveryResource = z.infer<typeof recoveryResourceSchema>;
 export type RecoveryPosture = z.infer<typeof recoveryPostureSchema>;
 export type UsageSummary = z.infer<typeof usageSummarySchema>;

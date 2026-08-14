@@ -1,6 +1,7 @@
 import {
   apiErrorSchema,
   buildLogsSchema,
+  cacheRevalidationHintSchema,
   dashboardSummarySchema,
   deploymentSchema,
   environmentVariableSchema,
@@ -11,6 +12,7 @@ import {
   repositoryInspectionSchema,
   domainSchema,
   managedResourceSchema,
+  projectCacheSchema,
   recoveryPostureSchema,
   usageSummarySchema,
   webAnalyticsSchema,
@@ -18,6 +20,7 @@ import {
   projectSchema,
   type ApiSuccess,
   type BuildLogs,
+  type CacheRevalidationHint,
   type CreateProjectInput,
   type DashboardSummary,
   type Deployment,
@@ -32,6 +35,7 @@ import {
   type CreateResourceInput,
   type ManagedResource,
   type Project,
+  type ProjectCache,
   type RecoveryPosture,
   type UsageSummary,
   type WebAnalytics,
@@ -529,6 +533,139 @@ export async function setCronSchedules(
   );
 }
 
+export type CacheRuleInput = {
+  id?: string;
+  pathExpression: string;
+  edgeTtlSeconds: number;
+  browserTtlSeconds: number | null;
+  enabled: boolean;
+};
+
+export async function getProjectCache(
+  projectId: string,
+  environmentId: string,
+): Promise<ProjectCache> {
+  if (isDemoMode()) return Promise.resolve(demoProjectCache());
+  return request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/cache`,
+    { method: 'GET' },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return projectCacheSchema.parse(envelope.data);
+    },
+  );
+}
+
+export async function setProjectCacheRules(
+  projectId: string,
+  environmentId: string,
+  rules: CacheRuleInput[],
+): Promise<ProjectCache> {
+  if (isDemoMode()) {
+    const state = demoProjectCache();
+    const syncedAt = new Date().toISOString();
+    demoCacheState = {
+      ...state,
+      rules: rules.map((rule) => ({
+        id: rule.id ?? crypto.randomUUID(),
+        pathExpression: rule.pathExpression,
+        edgeTtlSeconds: rule.edgeTtlSeconds,
+        browserTtlSeconds: rule.browserTtlSeconds,
+        enabled: rule.enabled,
+        syncedAt,
+        syncError: null,
+      })),
+    };
+    return Promise.resolve(demoCacheState);
+  }
+  return request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/cache/rules`,
+    { method: 'PUT', body: JSON.stringify({ rules }) },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return projectCacheSchema.parse(envelope.data);
+    },
+  );
+}
+
+export async function setProjectCacheSettings(
+  projectId: string,
+  environmentId: string,
+  revalidationNamespaceResourceId: string | null,
+): Promise<ProjectCache> {
+  if (isDemoMode()) {
+    const state = demoProjectCache();
+    const selected = state.revalidation.availableNamespaces.find(
+      (namespace) => namespace.resourceId === revalidationNamespaceResourceId,
+    );
+    demoCacheState = {
+      ...state,
+      revalidation: {
+        ...state.revalidation,
+        namespaceResourceId: selected?.resourceId ?? null,
+        namespaceName: selected?.name ?? null,
+      },
+    };
+    return Promise.resolve(demoCacheState);
+  }
+  return request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/cache/settings`,
+    { method: 'PUT', body: JSON.stringify({ revalidationNamespaceResourceId }) },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return projectCacheSchema.parse(envelope.data);
+    },
+  );
+}
+
+export async function purgeProjectCache(
+  projectId: string,
+  environmentId: string,
+): Promise<Array<{ zoneId: string; zoneName: string }>> {
+  if (isDemoMode()) {
+    return Promise.resolve(
+      demoProjectCache().zones.map((zone) => ({ zoneId: zone.zoneId, zoneName: zone.zoneName })),
+    );
+  }
+  return request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/cache/purge`,
+    { method: 'POST', body: JSON.stringify({ scope: 'all' }) },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return z
+        .object({ purgedZones: z.array(z.object({ zoneId: z.string(), zoneName: z.string() })) })
+        .parse(envelope.data).purgedZones;
+    },
+  );
+}
+
+export async function revalidateProjectCache(
+  projectId: string,
+  environmentId: string,
+  paths: string[],
+): Promise<CacheRevalidationHint[]> {
+  if (isDemoMode()) {
+    const state = demoProjectCache();
+    const now = new Date().toISOString();
+    const next = state.revalidation.hints.map((hint) =>
+      paths.includes(hint.pathExpression) ? { ...hint, revalidatedAt: now } : hint,
+    );
+    demoCacheState = {
+      ...state,
+      revalidation: { ...state.revalidation, hints: next },
+    };
+    return Promise.resolve(next.filter((hint) => paths.includes(hint.pathExpression)));
+  }
+  return request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/cache/revalidate`,
+    { method: 'POST', body: JSON.stringify({ paths }) },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return z.object({ hints: z.array(cacheRevalidationHintSchema) }).parse(envelope.data).hints;
+    },
+  );
+}
+
 export async function rollbackDeployment(deploymentId: string): Promise<Deployment> {
   if (isDemoMode()) {
     const target = demoSummary.deployments.find((deployment) => deployment.id === deploymentId);
@@ -854,4 +991,64 @@ function demoWebAnalytics(hours: number): WebAnalytics {
       { path: '/changelog', pageViews: 1_119, visits: 612 },
     ],
   };
+}
+
+let demoCacheState: ProjectCache | null = null;
+
+function demoProjectCache(): ProjectCache {
+  if (!demoCacheState) {
+    const syncedAt = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+    const revalidatedAt = new Date(Date.now() - 12 * 60 * 1000).toISOString();
+    demoCacheState = {
+      rules: [
+        {
+          id: '1b7a6f42-2d21-4b2d-9d7c-8a1f2c3d4e51',
+          pathExpression: '/blog/*',
+          edgeTtlSeconds: 3600,
+          browserTtlSeconds: 600,
+          enabled: true,
+          syncedAt,
+          syncError: null,
+        },
+        {
+          id: '2c8b7f53-3e32-4c3e-ae8d-9b2f3d4e5f62',
+          pathExpression: '/api/*',
+          edgeTtlSeconds: 0,
+          browserTtlSeconds: null,
+          enabled: true,
+          syncedAt,
+          syncError: null,
+        },
+        {
+          id: '3d9c8f64-4f43-4d4f-bf9e-0c3f4e5f6073',
+          pathExpression: '/assets/*',
+          edgeTtlSeconds: 2_592_000,
+          browserTtlSeconds: 86_400,
+          enabled: false,
+          syncedAt,
+          syncError: null,
+        },
+      ],
+      zones: [
+        {
+          zoneId: 'zone-northstar',
+          zoneName: 'northstar.example.com',
+          hostnames: ['northstar.example.com', 'www.northstar.example.com'],
+        },
+      ],
+      revalidation: {
+        namespaceResourceId: '49c5952d-0a31-401d-9132-af617b7a99de',
+        namespaceName: 'session-cache',
+        availableNamespaces: [
+          { resourceId: '49c5952d-0a31-401d-9132-af617b7a99de', name: 'session-cache' },
+        ],
+        hints: [
+          { pathExpression: '/blog/*', revalidatedAt },
+          { pathExpression: '/api/*', revalidatedAt: null },
+          { pathExpression: '/assets/*', revalidatedAt: null },
+        ],
+      },
+    };
+  }
+  return demoCacheState;
 }

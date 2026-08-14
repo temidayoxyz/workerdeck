@@ -22,6 +22,7 @@ import type {
   UpdateBuildTriggerInput,
   WorkerAnalyticsRow,
   WebAnalyticsRows,
+  CloudflareZoneCacheRuleset,
   BuildAccountLimits,
 } from './types';
 
@@ -467,6 +468,89 @@ export class CloudflareClient {
       z.unknown(),
       { method: 'DELETE' },
     );
+  }
+
+  async listZoneCacheRules(zoneId: string): Promise<CloudflareZoneCacheRuleset | null> {
+    try {
+      return await this.#request(
+        `/zones/${zoneId}/rulesets/phases/http_request_cache_settings/entrypoint`,
+        z.object({ id: z.string(), rules: z.array(z.record(z.string(), z.unknown())) }),
+      );
+    } catch (error) {
+      if (error instanceof CloudflareApiError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  async setZoneCacheRules(zoneId: string, rules: Array<Record<string, unknown>>): Promise<void> {
+    const existing = await this.listZoneCacheRules(zoneId);
+    if (existing) {
+      await this.#request(
+        `/zones/${zoneId}/rulesets/${encodeURIComponent(existing.id)}`,
+        z.unknown(),
+        { method: 'PUT', body: JSON.stringify({ rules }) },
+      );
+      return;
+    }
+    await this.#request(`/zones/${zoneId}/rulesets`, z.unknown(), {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'default',
+        kind: 'zone',
+        phase: 'http_request_cache_settings',
+        rules,
+      }),
+    });
+  }
+
+  async purgeZoneCache(zoneId: string): Promise<{ id: string }> {
+    return this.#request(`/zones/${zoneId}/purge_cache`, z.object({ id: z.string() }), {
+      method: 'POST',
+      body: JSON.stringify({ purge_everything: true }),
+    });
+  }
+
+  async writeKvValue(namespaceId: string, key: string, value: string): Promise<void> {
+    const accountId = this.#requireAccountId();
+    const response = await this.#fetcher(
+      `${this.#baseUrl}/accounts/${accountId}/storage/kv/namespaces/${encodeURIComponent(namespaceId)}/values/${encodeURIComponent(key)}`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${this.#token}`,
+          'Content-Type': 'text/plain',
+          'User-Agent': 'WorkerDeck/0.0.0',
+        },
+        body: value,
+      },
+    );
+    if (!response.ok) {
+      throw new CloudflareApiError(
+        `Cloudflare KV write failed with status ${response.status}.`,
+        response.status,
+      );
+    }
+  }
+
+  async readKvValue(namespaceId: string, key: string): Promise<string | null> {
+    const accountId = this.#requireAccountId();
+    const response = await this.#fetcher(
+      `${this.#baseUrl}/accounts/${accountId}/storage/kv/namespaces/${encodeURIComponent(namespaceId)}/values/${encodeURIComponent(key)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${this.#token}`,
+          'User-Agent': 'WorkerDeck/0.0.0',
+        },
+      },
+    );
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new CloudflareApiError(
+        `Cloudflare KV read failed with status ${response.status}.`,
+        response.status,
+      );
+    }
+    return response.text();
   }
 
   async upsertRepositoryConnection(input: {

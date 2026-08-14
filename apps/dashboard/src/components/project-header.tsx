@@ -13,6 +13,7 @@ const tabs = [
   { label: 'Domains', path: '/domains' },
   { label: 'Variables', path: '/variables' },
   { label: 'Cron', path: '/cron' },
+  { label: 'Cache', path: '/cache' },
   { label: 'Settings', path: '/settings' },
 ];
 

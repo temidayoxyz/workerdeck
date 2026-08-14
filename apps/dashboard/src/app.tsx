@@ -17,6 +17,7 @@ import { NotFoundPage } from './pages/not-found';
 import { BackupsPage, DomainsPage, ObservabilityPage, UsagePage } from './pages/operations';
 import { OverviewPage } from './pages/overview';
 import {
+  ProjectCachePage,
   ProjectCronPage,
   ProjectDeploymentsPage,
   ProjectDomainsPage,
@@ -217,6 +218,10 @@ export function App(): React.JSX.Element {
         <Route
           path="projects/:projectId/cron"
           element={<ProjectCronPage summary={summary} onDeploy={handleDeploy} />}
+        />
+        <Route
+          path="projects/:projectId/cache"
+          element={<ProjectCachePage summary={summary} onDeploy={handleDeploy} />}
         />
         <Route
           path="projects/:projectId/settings"

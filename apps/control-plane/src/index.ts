@@ -1,16 +1,23 @@
 import {
+  cacheSettingsInputSchema,
   attachDomainInputSchema,
   createDeploymentInputSchema,
   createProjectInputSchema,
   createResourceInputSchema,
   environmentVariableKeySchema,
+  purgeCacheInputSchema,
+  revalidateCacheInputSchema,
   rollbackDeploymentInputSchema,
   setCronSchedulesInputSchema,
+  setCacheRulesInputSchema,
   setTrafficInputSchema,
   repositoryInspectionSchema,
   upsertEnvironmentVariableInputSchema,
+  type CacheRevalidationHint,
+  type CacheRule,
   type CreateResourceInput,
   type DashboardSummary,
+  type ProjectCache,
   type RecoveryResource,
   type ResourceKind,
   type WorkerAnalytics,
@@ -32,8 +39,16 @@ import {
 } from './build-commands';
 import { diagnoseBuildFailure } from './build-diagnostics';
 import { AppError } from './errors';
+import {
+  cacheRulesetRulesFor,
+  distinctCacheZones,
+  mergeZoneCacheRules,
+  parseRevalidationTimestamp,
+  revalidationGenerationKey,
+  revalidationKeyFor,
+} from './cache';
 import { GitHubAppClient } from './github';
-import { Repository } from './repository';
+import { Repository, type DeploymentTarget } from './repository';
 import { requestContext, securityHeaders, verifyMutationOrigin } from './security';
 import type { AppEnv } from './types';
 import { aggregateWebAnalytics } from './web-analytics';
@@ -1444,6 +1459,150 @@ app.get(
   },
 );
 
+app.get('/api/v1/projects/:projectId/environments/:environmentId/cache', async (context) => {
+  const target = await new Repository(context.env.DB).getDeploymentTarget(
+    context.req.param('projectId'),
+    context.req.param('environmentId'),
+  );
+  return context.json({
+    data: await projectCacheData(context, target),
+    requestId: context.get('requestId'),
+  });
+});
+
+app.put('/api/v1/projects/:projectId/environments/:environmentId/cache/rules', async (context) => {
+  const parsed = setCacheRulesInputSchema.safeParse(await context.req.json().catch(() => null));
+  if (!parsed.success) {
+    throw new AppError(
+      422,
+      'INVALID_CACHE_RULES',
+      'Use up to 25 path rules with TTLs between 0 seconds and 30 days.',
+      parsed.error.flatten(),
+    );
+  }
+  const seenPaths = new Set<string>();
+  for (const rule of parsed.data.rules) {
+    if (seenPaths.has(rule.pathExpression)) {
+      throw new AppError(
+        422,
+        'DUPLICATE_CACHE_PATH',
+        `The path ${rule.pathExpression} appears more than once.`,
+      );
+    }
+    seenPaths.add(rule.pathExpression);
+  }
+  const repository = new Repository(context.env.DB);
+  const target = await repository.getDeploymentTarget(
+    context.req.param('projectId'),
+    context.req.param('environmentId'),
+  );
+  await repository.replaceCacheRules(
+    target.projectId,
+    parsed.data.rules,
+    context.get('actor'),
+    context.get('requestId'),
+  );
+  const rules = await repository.listCacheRules(target.projectId);
+  await syncCacheRulesToZones(context, target, rules);
+  return context.json({
+    data: await projectCacheData(context, target),
+    requestId: context.get('requestId'),
+  });
+});
+
+app.put(
+  '/api/v1/projects/:projectId/environments/:environmentId/cache/settings',
+  async (context) => {
+    const parsed = cacheSettingsInputSchema.safeParse(await context.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new AppError(
+        422,
+        'INVALID_CACHE_SETTINGS',
+        'Choose a valid KV namespace for revalidation hints.',
+      );
+    }
+    const repository = new Repository(context.env.DB);
+    const target = await repository.getDeploymentTarget(
+      context.req.param('projectId'),
+      context.req.param('environmentId'),
+    );
+    if (parsed.data.revalidationNamespaceResourceId) {
+      const resources = await repository.listManagedResources();
+      const namespace = resources.find(
+        (resource) =>
+          resource.id === parsed.data.revalidationNamespaceResourceId &&
+          resource.kind === 'kv' &&
+          resource.projectId === target.projectId,
+      );
+      if (!namespace) {
+        throw new AppError(
+          409,
+          'REVALIDATION_NAMESPACE_INVALID',
+          'That KV namespace is not owned by this project.',
+        );
+      }
+    }
+    await repository.setCacheSettings(
+      target.projectId,
+      parsed.data.revalidationNamespaceResourceId,
+      context.get('actor'),
+      context.get('requestId'),
+    );
+    return context.json({
+      data: await projectCacheData(context, target),
+      requestId: context.get('requestId'),
+    });
+  },
+);
+
+app.post('/api/v1/projects/:projectId/environments/:environmentId/cache/purge', async (context) => {
+  const parsed = purgeCacheInputSchema.safeParse(await context.req.json().catch(() => null));
+  if (!parsed.success) {
+    throw new AppError(422, 'INVALID_CACHE_PURGE', 'Only full-zone purges are supported.');
+  }
+  const repository = new Repository(context.env.DB);
+  const target = await repository.getDeploymentTarget(
+    context.req.param('projectId'),
+    context.req.param('environmentId'),
+  );
+  const zones = await projectCacheZones(context, target);
+  if (zones.length === 0) {
+    throw new AppError(
+      409,
+      'CACHE_ZONE_REQUIRED',
+      'Attach a custom domain before purging. workers.dev subdomains have no zone cache to purge.',
+    );
+  }
+  const purgedZones = await Promise.all(
+    zones.map(async (zone) => {
+      await cloudflareClient(context).purgeZoneCache(zone.zoneId);
+      return { zoneId: zone.zoneId, zoneName: zone.zoneName };
+    }),
+  );
+  return context.json({ data: { purgedZones }, requestId: context.get('requestId') }, 201);
+});
+
+app.post(
+  '/api/v1/projects/:projectId/environments/:environmentId/cache/revalidate',
+  async (context) => {
+    const parsed = revalidateCacheInputSchema.safeParse(await context.req.json().catch(() => null));
+    if (!parsed.success) {
+      throw new AppError(
+        422,
+        'INVALID_REVALIDATION',
+        'Choose between 1 and 25 valid path patterns to revalidate.',
+      );
+    }
+    const repository = new Repository(context.env.DB);
+    const target = await repository.getDeploymentTarget(
+      context.req.param('projectId'),
+      context.req.param('environmentId'),
+    );
+    const hints = await revalidateProjectCache(context, target, parsed.data.paths);
+    return context.json({ data: { hints }, requestId: context.get('requestId') }, 201);
+  },
+);
+
 app.get('/api/v1/cloudflare/durable-objects/namespaces', async (context) => {
   const namespaces = await cloudflareClient(context).listDurableObjectNamespaces();
   return context.json({ data: namespaces, requestId: context.get('requestId') });
@@ -2091,6 +2250,155 @@ async function webAnalytics(
   }
   const rows = await cloudflareClient(context).getWebAnalytics(range.from, range.to, hostnameList);
   return aggregateWebAnalytics(range, hostnameList, rows);
+}
+
+async function projectCacheZones(
+  context: Context<AppEnv>,
+  target: DeploymentTarget,
+): Promise<Array<{ zoneId: string; zoneName: string; hostnames: string[] }>> {
+  const domains = await cloudflareClient(context).listWorkerDomains(target.workerName);
+  return distinctCacheZones(
+    domains.map((domain) => ({
+      zoneId: domain.zoneId,
+      zoneName: domain.zoneName,
+      hostname: domain.hostname,
+    })),
+  );
+}
+
+async function projectCacheData(
+  context: Context<AppEnv>,
+  target: DeploymentTarget,
+): Promise<ProjectCache> {
+  const repository = new Repository(context.env.DB);
+  const [rules, resources, zones, settings] = await Promise.all([
+    repository.listCacheRules(target.projectId),
+    repository.listManagedResources(),
+    projectCacheZones(context, target),
+    repository.getCacheSettings(target.projectId),
+  ]);
+  const kvResources = resources.filter(
+    (resource) => resource.kind === 'kv' && resource.projectId === target.projectId,
+  );
+  const selected = kvResources.find(
+    (resource) => resource.id === settings.revalidationNamespaceResourceId,
+  );
+  const hints: CacheRevalidationHint[] = [];
+  if (selected) {
+    const client = cloudflareClient(context);
+    for (const rule of rules) {
+      const raw = await client.readKvValue(
+        selected.cloudflareId,
+        revalidationKeyFor(rule.pathExpression),
+      );
+      hints.push({
+        pathExpression: rule.pathExpression,
+        revalidatedAt: parseRevalidationTimestamp(raw),
+      });
+    }
+  }
+  return {
+    rules,
+    zones,
+    revalidation: {
+      namespaceResourceId: selected?.id ?? null,
+      namespaceName: selected?.name ?? null,
+      availableNamespaces: kvResources.map((resource) => ({
+        resourceId: resource.id,
+        name: resource.name,
+      })),
+      hints,
+    },
+  };
+}
+
+async function syncCacheRulesToZones(
+  context: Context<AppEnv>,
+  target: DeploymentTarget,
+  rules: CacheRule[],
+): Promise<void> {
+  const repository = new Repository(context.env.DB);
+  const zones = await projectCacheZones(context, target);
+  if (zones.length === 0) {
+    await repository.updateCacheRuleSync(
+      target.projectId,
+      null,
+      'Attach a custom domain to sync these rules. Cache Rules apply to proxied zone traffic, not workers.dev subdomains.',
+    );
+    return;
+  }
+  const client = cloudflareClient(context);
+  const managed = cacheRulesetRulesFor(rules);
+  const failures: string[] = [];
+  for (const zone of zones) {
+    try {
+      const existing = await client.listZoneCacheRules(zone.zoneId);
+      await client.setZoneCacheRules(
+        zone.zoneId,
+        mergeZoneCacheRules(existing?.rules ?? [], managed),
+      );
+    } catch (error) {
+      failures.push(`${zone.zoneName}: ${error instanceof Error ? error.message : 'sync failed'}`);
+    }
+  }
+  if (failures.length > 0) {
+    const message = failures.join('; ').slice(0, 500);
+    await repository.updateCacheRuleSync(target.projectId, null, message);
+    throw new AppError(
+      502,
+      'CACHE_RULE_SYNC_FAILED',
+      'Some Cloudflare zones rejected the cache rules.',
+      {
+        zones: failures,
+      },
+    );
+  }
+  await repository.updateCacheRuleSync(target.projectId, new Date().toISOString(), null);
+}
+
+async function revalidateProjectCache(
+  context: Context<AppEnv>,
+  target: DeploymentTarget,
+  paths: string[],
+): Promise<CacheRevalidationHint[]> {
+  const repository = new Repository(context.env.DB);
+  const settings = await repository.getCacheSettings(target.projectId);
+  if (!settings.revalidationNamespaceResourceId) {
+    throw new AppError(
+      409,
+      'REVALIDATION_NAMESPACE_REQUIRED',
+      'Choose a KV namespace before revalidating routes.',
+    );
+  }
+  const resources = await repository.listManagedResources();
+  const namespace = resources.find(
+    (resource) =>
+      resource.id === settings.revalidationNamespaceResourceId &&
+      resource.kind === 'kv' &&
+      resource.projectId === target.projectId,
+  );
+  if (!namespace) {
+    throw new AppError(
+      409,
+      'REVALIDATION_NAMESPACE_INVALID',
+      'The selected revalidation namespace is no longer available.',
+    );
+  }
+  const client = cloudflareClient(context);
+  const now = new Date().toISOString();
+  await client.writeKvValue(
+    namespace.cloudflareId,
+    revalidationGenerationKey,
+    JSON.stringify({ at: now, source: 'workerdeck' }),
+  );
+  for (const path of paths) {
+    await client.writeKvValue(
+      namespace.cloudflareId,
+      revalidationKeyFor(path),
+      JSON.stringify({ at: now, path }),
+    );
+  }
+  return paths.map((path) => ({ pathExpression: path, revalidatedAt: now }));
 }
 
 async function requireBuildToken(

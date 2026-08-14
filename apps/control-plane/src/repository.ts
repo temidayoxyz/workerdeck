@@ -3,6 +3,7 @@ import {
   domainSchema,
   managedResourceSchema,
   projectSchema,
+  type CacheRule,
   type CreateDeploymentInput,
   type CreateProjectInput,
   type DashboardSummary,
@@ -106,6 +107,26 @@ interface ManagedResourceRow {
   status: ResourceStatus;
   created_at: string;
   deleted_at: string | null;
+}
+
+interface CacheRuleRow {
+  id: string;
+  project_id: string;
+  path_expression: string;
+  edge_ttl_seconds: number;
+  browser_ttl_seconds: number | null;
+  enabled: number;
+  position: number;
+  synced_at: string | null;
+  sync_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CacheSettingsRow {
+  project_id: string;
+  revalidation_namespace_resource_id: string | null;
+  updated_at: string;
 }
 
 interface GitInstallationRow {
@@ -504,6 +525,136 @@ export class Repository {
       .prepare('SELECT * FROM managed_resources WHERE deleted_at IS NULL ORDER BY created_at DESC')
       .all<ManagedResourceRow>();
     return result.results.map(toManagedResource);
+  }
+
+  async listCacheRules(projectId: string): Promise<CacheRule[]> {
+    const result = await this.db
+      .prepare(
+        'SELECT * FROM cache_rules WHERE project_id = ? ORDER BY position ASC, created_at ASC',
+      )
+      .bind(projectId)
+      .all<CacheRuleRow>();
+    return result.results.map((row) => ({
+      id: row.id,
+      pathExpression: row.path_expression,
+      edgeTtlSeconds: row.edge_ttl_seconds,
+      browserTtlSeconds: row.browser_ttl_seconds,
+      enabled: row.enabled === 1,
+      syncedAt: row.synced_at,
+      syncError: row.sync_error,
+    }));
+  }
+
+  async replaceCacheRules(
+    projectId: string,
+    input: Array<{
+      id?: string | undefined;
+      pathExpression: string;
+      edgeTtlSeconds: number;
+      browserTtlSeconds: number | null;
+      enabled: boolean;
+    }>,
+    actor: string,
+    requestId: string,
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    const statements = [
+      this.db.prepare('DELETE FROM cache_rules WHERE project_id = ?').bind(projectId),
+    ];
+    for (const [index, rule] of input.entries()) {
+      statements.push(
+        this.db
+          .prepare(
+            `INSERT INTO cache_rules (
+              id, project_id, path_expression, edge_ttl_seconds, browser_ttl_seconds,
+              enabled, position, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            rule.id ?? crypto.randomUUID(),
+            projectId,
+            rule.pathExpression,
+            rule.edgeTtlSeconds,
+            rule.browserTtlSeconds,
+            rule.enabled ? 1 : 0,
+            index,
+            now,
+            now,
+          ),
+      );
+    }
+    statements.push(
+      this.db
+        .prepare(
+          `INSERT INTO audit_events (
+            id, actor, action, target_type, target_id, request_id, metadata_json, created_at
+          ) VALUES (?, ?, 'cache.rules.updated', 'project', ?, ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          actor,
+          projectId,
+          requestId,
+          JSON.stringify({ ruleCount: input.length }),
+          now,
+        ),
+    );
+    await this.db.batch(statements);
+  }
+
+  async updateCacheRuleSync(
+    projectId: string,
+    syncedAt: string | null,
+    syncError: string | null,
+  ): Promise<void> {
+    await this.db
+      .prepare('UPDATE cache_rules SET synced_at = ?, sync_error = ? WHERE project_id = ?')
+      .bind(syncedAt, syncError, projectId)
+      .run();
+  }
+
+  async getCacheSettings(
+    projectId: string,
+  ): Promise<{ revalidationNamespaceResourceId: string | null }> {
+    const row = await this.db
+      .prepare('SELECT * FROM cache_settings WHERE project_id = ?')
+      .bind(projectId)
+      .first<CacheSettingsRow>();
+    return { revalidationNamespaceResourceId: row?.revalidation_namespace_resource_id ?? null };
+  }
+
+  async setCacheSettings(
+    projectId: string,
+    revalidationNamespaceResourceId: string | null,
+    actor: string,
+    requestId: string,
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db.batch([
+      this.db
+        .prepare(
+          `INSERT INTO cache_settings (project_id, revalidation_namespace_resource_id, updated_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(project_id) DO UPDATE SET
+             revalidation_namespace_resource_id = excluded.revalidation_namespace_resource_id,
+             updated_at = excluded.updated_at`,
+        )
+        .bind(projectId, revalidationNamespaceResourceId, now),
+      this.db
+        .prepare(
+          `INSERT INTO audit_events (
+            id, actor, action, target_type, target_id, request_id, metadata_json, created_at
+          ) VALUES (?, ?, 'cache.revalidation.namespace', 'project', ?, ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          actor,
+          projectId,
+          requestId,
+          JSON.stringify({ resourceId: revalidationNamespaceResourceId }),
+          now,
+        ),
+    ]);
   }
 
   async saveGitHubInstallation(input: {

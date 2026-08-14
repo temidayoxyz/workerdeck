@@ -694,6 +694,124 @@ describe('CloudflareClient', () => {
     expect(body.query).toContain('rumWebVitalsEventsAdaptiveGroups');
   });
 
+  it('returns null when a zone has no cache ruleset yet', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: false,
+          errors: [{ code: 7003, message: 'not found' }],
+          messages: [],
+          result: null,
+        }),
+        { status: 404, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(client.listZoneCacheRules('zone-id')).resolves.toBeNull();
+    expect(fetcher.mock.calls[0]?.[0]).toContain(
+      '/zones/zone-id/rulesets/phases/http_request_cache_settings/entrypoint',
+    );
+  });
+
+  it('creates the cache ruleset when the phase entrypoint is missing', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ success: false, errors: [], messages: [], result: null }), {
+          status: 404,
+        }),
+      )
+      .mockResolvedValueOnce(response({ id: 'ruleset-id', rules: [] }));
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(
+      client.setZoneCacheRules('zone-id', [
+        { id: 'workerdeck-cache:rule-1', action: 'set_cache_settings' },
+      ]),
+    ).resolves.toBeUndefined();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const [url, init] = fetcher.mock.calls[1]!;
+    expect(url).toContain('/zones/zone-id/rulesets');
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse(init?.body as string)).toEqual({
+      name: 'default',
+      kind: 'zone',
+      phase: 'http_request_cache_settings',
+      rules: [{ id: 'workerdeck-cache:rule-1', action: 'set_cache_settings' }],
+    });
+  });
+
+  it('updates an existing cache ruleset in place', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(response({ id: 'ruleset-id', rules: [] }))
+      .mockResolvedValueOnce(response({ id: 'ruleset-id', rules: [] }));
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(
+      client.setZoneCacheRules('zone-id', [{ id: 'workerdeck-cache:rule-1' }]),
+    ).resolves.toBeUndefined();
+    const [url, init] = fetcher.mock.calls[1]!;
+    expect(url).toContain('/zones/zone-id/rulesets/ruleset-id');
+    expect(init?.method).toBe('PUT');
+    expect(JSON.parse(init?.body as string)).toEqual({
+      rules: [{ id: 'workerdeck-cache:rule-1' }],
+    });
+  });
+
+  it('purges an entire zone cache', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response({ id: 'purge-id' }));
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(client.purgeZoneCache('zone-id')).resolves.toEqual({ id: 'purge-id' });
+    const [url, init] = fetcher.mock.calls[0]!;
+    expect(url).toContain('/zones/zone-id/purge_cache');
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse(init?.body as string)).toEqual({ purge_everything: true });
+  });
+
+  it('writes a raw KV value without wrapping it in a JSON envelope', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 200 }));
+    const client = new CloudflareClient({ token: 'secret', accountId: 'account', fetcher });
+
+    await expect(
+      client.writeKvValue('namespace-id', 'workerdeck:revalidate:/*', '{"at":"now"}'),
+    ).resolves.toBeUndefined();
+    const [url, init] = fetcher.mock.calls[0]!;
+    expect(url).toBe(
+      'https://api.cloudflare.com/client/v4/accounts/account/storage/kv/namespaces/namespace-id/values/workerdeck%3Arevalidate%3A%2F*',
+    );
+    expect(init?.method).toBe('PUT');
+    expect(init?.body).toBe('{"at":"now"}');
+    expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer secret');
+  });
+
+  it('reads KV values and tolerates missing keys', async () => {
+    const missing = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 404 }));
+    const missingClient = new CloudflareClient({
+      token: 'token',
+      accountId: 'account',
+      fetcher: missing,
+    });
+    await expect(missingClient.readKvValue('namespace-id', 'missing')).resolves.toBeNull();
+
+    const present = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response('{"at":"2026-08-13T00:00:00.000Z"}', {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain' },
+      }),
+    );
+    const presentClient = new CloudflareClient({
+      token: 'token',
+      accountId: 'account',
+      fetcher: present,
+    });
+    await expect(presentClient.readKvValue('namespace-id', 'key')).resolves.toBe(
+      '{"at":"2026-08-13T00:00:00.000Z"}',
+    );
+  });
+
   it('verifies D1 Time Travel bookmarks without invoking restore', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response({ bookmark: 'bookmark-id' }));
     const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });

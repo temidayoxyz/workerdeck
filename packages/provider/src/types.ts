@@ -176,6 +176,11 @@ export interface WebAnalyticsRows {
   vitals: WebAnalyticsVitalsRow[];
 }
 
+export interface CloudflareZoneCacheRuleset {
+  id: string;
+  rules: Array<Record<string, unknown>>;
+}
+
 export interface BuildAccountLimits {
   limitReached: boolean | null;
   refreshesAt: string | null;
