@@ -98,4 +98,16 @@ describe('managed Vite deployment', () => {
     );
     expect(managedDeployCommand('npx wrangler deploy', false, 'static')).toContain("directory:'.'");
   });
+
+  it('is idempotent so reconciliation never stacks managed flags', () => {
+    const once = managedDeployCommand('npx wrangler deploy', false, 'vite');
+    expect(managedDeployCommand(once, false, 'vite')).toBe(once);
+  });
+
+  it('repairs a trigger that already received a duplicated managed command', () => {
+    const once = managedDeployCommand('npx wrangler deploy', false, 'vite');
+    const setup = once.split(' && ')[0];
+    const duplicated = `${setup} && ${setup} && npx wrangler deploy --config workerdeck.assets.jsonc --config workerdeck.assets.jsonc`;
+    expect(managedDeployCommand(duplicated, false, 'vite')).toBe(once);
+  });
 });

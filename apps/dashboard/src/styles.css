@@ -1205,7 +1205,7 @@ select:focus-visible {
   min-height: 64px;
   grid-template-columns:
     minmax(0, 0.7fr) minmax(0, 1.6fr) minmax(0, 0.5fr) minmax(0, 0.9fr) minmax(0, 0.65fr)
-    160px;
+    205px;
   align-items: center;
   gap: 16px;
   padding: 0 18px;

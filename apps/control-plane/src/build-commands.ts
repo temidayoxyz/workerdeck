@@ -70,12 +70,14 @@ export function managedDeployCommand(
       assetsMatch?.[2] ||
       assetsMatch?.[3] ||
       (framework === 'static' ? '.' : 'dist');
-    const withoutAssets = managed
+    const base = managed
+      .replace(/(?:^|\s)node\s+-e\s+"[^"]*workerdeck\.assets\.jsonc[^"]*"\s*&&/g, '')
+      .replace(/\s+--config(?:=|\s+)(?:"[^"]*"|'[^']*'|\S+)/g, '')
       .replace(/\s+--assets(?:=|\s+)(?:"[^"]*"|'[^']*'|\S+)/g, '')
       .replace(/\s+--compatibility-date(?:=|\s+)(?:"[^"]*"|'[^']*'|\S+)/g, '')
       .replace(/\s+/g, ' ')
       .trim();
-    return `${assetsConfigSetup(directory)} && ${withoutAssets} --config workerdeck.assets.jsonc`;
+    return `${assetsConfigSetup(directory)} && ${base} --config workerdeck.assets.jsonc`;
   }
   return managed;
 }

@@ -202,6 +202,10 @@ export function App(): React.JSX.Element {
           element={<ProjectLogsPage summary={summary} onDeploy={handleDeploy} />}
         />
         <Route
+          path="projects/:projectId/logs/:deploymentId"
+          element={<ProjectLogsPage summary={summary} onDeploy={handleDeploy} />}
+        />
+        <Route
           path="projects/:projectId/resources"
           element={<ProjectResourcesPage summary={summary} onDeploy={handleDeploy} />}
         />

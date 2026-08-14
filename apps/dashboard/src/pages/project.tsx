@@ -537,15 +537,18 @@ export function ProjectLogsPage({
   summary: DashboardSummary | null;
   onDeploy: (projectId: string, environmentId: string) => Promise<void>;
 }): React.JSX.Element {
-  const { projectId } = useParams();
+  const { projectId, deploymentId } = useParams();
   const project = summary?.projects.find((candidate) => candidate.id === projectId);
   const environment = summary?.environments.find(
     (candidate) => candidate.projectId === projectId && candidate.kind === 'production',
   );
-  const latest = summary?.deployments.find(
+  const latestForProject = summary?.deployments.find(
     (deployment) =>
       deployment.projectId === projectId && deployment.environmentId === environment?.id,
   );
+  const latest = deploymentId
+    ? summary?.deployments.find((deployment) => deployment.id === deploymentId)
+    : latestForProject;
   const [logs, setLogs] = useState<Awaited<ReturnType<typeof getBuildLogs>> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -568,7 +571,7 @@ export function ProjectLogsPage({
       <section className="project-section-intro">
         <div>
           <h2>Build logs</h2>
-          <p>Immutable Workers Builds output for the latest deployment.</p>
+          <p>Immutable Workers Builds output for the selected deployment.</p>
         </div>
         {latest ? (
           <div className="log-actions">

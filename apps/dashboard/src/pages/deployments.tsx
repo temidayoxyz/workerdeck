@@ -1,7 +1,7 @@
 import type { DashboardSummary } from '@workerdeck/contracts';
-import { AlertCircle, GitCommitHorizontal, RotateCcw, Trash2 } from '../components/icon';
+import { AlertCircle, Code2, GitCommitHorizontal, RotateCcw, Trash2 } from '../components/icon';
 import { useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import type { ShellContext } from '../components/app-shell';
 import { DeploymentStatus } from '../components/status';
 import { relativeTime, shortSha } from '../lib/format';
@@ -102,6 +102,15 @@ export function DeploymentsPage({
                       <RotateCcw size={13} />
                       {rollingBack === deployment.id ? 'Rolling back...' : 'Rollback'}
                     </button>
+                  ) : null}
+                  {project ? (
+                    <Link
+                      className="row-action"
+                      to={`/projects/${project.id}/logs/${deployment.id}`}
+                      aria-label={`View build logs for ${project.name}`}
+                    >
+                      <Code2 size={15} />
+                    </Link>
                   ) : null}
                   <button
                     className="row-action danger-action"
