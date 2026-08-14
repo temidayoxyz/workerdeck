@@ -5,6 +5,7 @@ import {
   accessTeamSchema,
   dashboardSummarySchema,
   deploymentSchema,
+  emailRoutingDataSchema,
   environmentVariableSchema,
   environmentVariablesSchema,
   gitHubConnectionSchema,
@@ -29,6 +30,7 @@ import {
   type EnvironmentVariable,
   type EnvironmentVariables,
   type EnvironmentVariableTarget,
+  type EmailRoutingData,
   type GitHubConnection,
   type GitInstallation,
   type GitRepository,
@@ -770,6 +772,193 @@ export async function syncAccessGroups(): Promise<AccessTeam> {
   });
 }
 
+export async function getProjectEmailRouting(
+  projectId: string,
+  environmentId: string,
+  zoneId?: string,
+): Promise<EmailRoutingData> {
+  if (isDemoMode()) return Promise.resolve(demoEmailRouting());
+  const query = zoneId ? `?zoneId=${encodeURIComponent(zoneId)}` : '';
+  return request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/email-routing${query}`,
+    { method: 'GET' },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return emailRoutingDataSchema.parse(envelope.data);
+    },
+  );
+}
+
+export async function createProjectEmailRoutingRule(
+  projectId: string,
+  environmentId: string,
+  input: { zoneId: string; matcherEmail: string; destinationEmail: string; enabled: boolean },
+): Promise<EmailRoutingData> {
+  if (isDemoMode()) {
+    const state = demoEmailRouting();
+    demoEmailRoutingState = {
+      ...state,
+      rules: [
+        ...state.rules,
+        {
+          id: crypto.randomUUID(),
+          matcherEmail: input.matcherEmail.toLowerCase(),
+          destinationEmail: input.destinationEmail.toLowerCase(),
+          enabled: input.enabled,
+          name: null,
+        },
+      ],
+    };
+    return Promise.resolve(demoEmailRoutingState);
+  }
+  return request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/email-routing/rules`,
+    { method: 'POST', body: JSON.stringify(input) },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return emailRoutingDataSchema.parse(envelope.data);
+    },
+  );
+}
+
+export async function updateProjectEmailRoutingRule(
+  projectId: string,
+  environmentId: string,
+  ruleId: string,
+  input: { zoneId: string; enabled: boolean },
+): Promise<EmailRoutingData> {
+  if (isDemoMode()) {
+    const state = demoEmailRouting();
+    demoEmailRoutingState = {
+      ...state,
+      rules: state.rules.map((rule) =>
+        rule.id === ruleId ? { ...rule, enabled: input.enabled } : rule,
+      ),
+    };
+    return Promise.resolve(demoEmailRoutingState);
+  }
+  return request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/email-routing/rules/${encodeURIComponent(ruleId)}`,
+    { method: 'PUT', body: JSON.stringify(input) },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return emailRoutingDataSchema.parse(envelope.data);
+    },
+  );
+}
+
+export async function deleteProjectEmailRoutingRule(
+  projectId: string,
+  environmentId: string,
+  ruleId: string,
+  zoneId: string,
+): Promise<EmailRoutingData> {
+  if (isDemoMode()) {
+    const state = demoEmailRouting();
+    demoEmailRoutingState = {
+      ...state,
+      rules: state.rules.filter((rule) => rule.id !== ruleId),
+    };
+    return Promise.resolve(demoEmailRoutingState);
+  }
+  return request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/email-routing/rules/${encodeURIComponent(ruleId)}?zoneId=${encodeURIComponent(zoneId)}`,
+    { method: 'DELETE' },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return emailRoutingDataSchema.parse(envelope.data);
+    },
+  );
+}
+
+export async function setProjectEmailRoutingStatus(
+  projectId: string,
+  environmentId: string,
+  input: { zoneId: string; enabled: boolean },
+): Promise<EmailRoutingData> {
+  if (isDemoMode()) {
+    const state = demoEmailRouting();
+    demoEmailRoutingState = {
+      ...state,
+      status: state.status
+        ? {
+            ...state.status,
+            enabled: input.enabled,
+            status: input.enabled ? 'ready' : 'disabled',
+          }
+        : state.status,
+    };
+    return Promise.resolve(demoEmailRoutingState);
+  }
+  return request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/email-routing/status`,
+    { method: 'PUT', body: JSON.stringify(input) },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return emailRoutingDataSchema.parse(envelope.data);
+    },
+  );
+}
+
+export async function createProjectEmailRoutingAddress(
+  projectId: string,
+  environmentId: string,
+  email: string,
+  zoneId?: string,
+): Promise<EmailRoutingData> {
+  if (isDemoMode()) {
+    const state = demoEmailRouting();
+    demoEmailRoutingState = {
+      ...state,
+      addresses: [
+        ...state.addresses,
+        {
+          id: crypto.randomUUID(),
+          email: email.toLowerCase(),
+          verified: false,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    };
+    return Promise.resolve(demoEmailRoutingState);
+  }
+  const query = zoneId ? `?zoneId=${encodeURIComponent(zoneId)}` : '';
+  return request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/email-routing/addresses${query}`,
+    { method: 'POST', body: JSON.stringify({ email }) },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return emailRoutingDataSchema.parse(envelope.data);
+    },
+  );
+}
+
+export async function setProjectEmailRoutingCatchAll(
+  projectId: string,
+  environmentId: string,
+  input: { zoneId: string; enabled: boolean; destinationEmail: string | null },
+): Promise<EmailRoutingData> {
+  if (isDemoMode()) {
+    const state = demoEmailRouting();
+    demoEmailRoutingState = {
+      ...state,
+      catchAll: {
+        enabled: input.enabled,
+        destinationEmail: input.enabled ? input.destinationEmail : null,
+      },
+    };
+    return Promise.resolve(demoEmailRoutingState);
+  }
+  return request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/email-routing/catch-all`,
+    { method: 'PUT', body: JSON.stringify(input) },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return emailRoutingDataSchema.parse(envelope.data);
+    },
+  );
+}
+
 export async function rollbackDeployment(deploymentId: string): Promise<Deployment> {
   if (isDemoMode()) {
     const target = demoSummary.deployments.find((deployment) => deployment.id === deploymentId);
@@ -1221,4 +1410,56 @@ function demoAccessTeam(): AccessTeam {
     };
   }
   return demoAccessState;
+}
+
+let demoEmailRoutingState: EmailRoutingData | null = null;
+
+function demoEmailRouting(): EmailRoutingData {
+  if (!demoEmailRoutingState) {
+    const verifiedAt = new Date(Date.now() - 12 * 24 * 60 * 60 * 1000).toISOString();
+    const pendingAt = new Date(Date.now() - 35 * 60 * 1000).toISOString();
+    demoEmailRoutingState = {
+      zones: [
+        {
+          zoneId: 'zone-northstar',
+          zoneName: 'northstar.example.com',
+          hostnames: ['northstar.example.com', 'www.northstar.example.com'],
+        },
+      ],
+      selectedZoneId: 'zone-northstar',
+      status: {
+        enabled: true,
+        status: 'ready',
+        domain: 'northstar.example.com',
+      },
+      addresses: [
+        {
+          id: '9f8a2c1d-4e2b-4d5f-8c1a-2b3c4d5e6f71',
+          email: 'temidayoxyz@gmail.com',
+          verified: true,
+          createdAt: verifiedAt,
+        },
+        {
+          id: '1a9b3d2e-5f3c-4e60-9d2b-3c4d5e6f7082',
+          email: 'team@example.com',
+          verified: false,
+          createdAt: pendingAt,
+        },
+      ],
+      rules: [
+        {
+          id: 'a3c1b4e5-7d4f-4b8e-9d3c-6e7f8a9b0c12',
+          matcherEmail: 'support@northstar.example.com',
+          destinationEmail: 'temidayoxyz@gmail.com',
+          enabled: true,
+          name: null,
+        },
+      ],
+      catchAll: {
+        enabled: false,
+        destinationEmail: null,
+      },
+    };
+  }
+  return demoEmailRoutingState;
 }

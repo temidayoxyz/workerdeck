@@ -865,6 +865,271 @@ describe('CloudflareClient', () => {
     expect(deleteInit?.method).toBe('DELETE');
   });
 
+  it('lists destination addresses and normalizes their verification timestamps', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      response([
+        {
+          id: 'address-id',
+          email: 'temidayoxyz@gmail.com',
+          verified: '2026-08-12T09:00:00.000Z',
+          created: '2026-08-11T09:00:00.000Z',
+          modified: '2026-08-12T09:00:00.000Z',
+        },
+        {
+          id: 'pending-id',
+          email: 'team@example.com',
+          verified: null,
+          created: '2026-08-13T09:00:00.000Z',
+          modified: '2026-08-13T09:00:00.000Z',
+        },
+      ]),
+    );
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(client.listEmailRoutingDestinationAddresses()).resolves.toEqual([
+      {
+        id: 'address-id',
+        email: 'temidayoxyz@gmail.com',
+        verified: true,
+        createdAt: '2026-08-11T09:00:00.000Z',
+      },
+      {
+        id: 'pending-id',
+        email: 'team@example.com',
+        verified: false,
+        createdAt: '2026-08-13T09:00:00.000Z',
+      },
+    ]);
+    expect(fetcher.mock.calls[0]?.[0]).toContain('/accounts/account/email/routing/addresses');
+  });
+
+  it('creates a destination address that Cloudflare will verify out of band', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      response({
+        id: 'address-id',
+        email: 'ops@example.com',
+        verified: null,
+        created: '2026-08-13T09:00:00.000Z',
+        modified: '2026-08-13T09:00:00.000Z',
+      }),
+    );
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(client.createEmailRoutingDestinationAddress('ops@example.com')).resolves.toEqual({
+      id: 'address-id',
+      email: 'ops@example.com',
+      verified: false,
+      createdAt: '2026-08-13T09:00:00.000Z',
+    });
+    const [url, init] = fetcher.mock.calls[0]!;
+    expect(url).toContain('/accounts/account/email/routing/addresses');
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse(init?.body as string)).toEqual({ email: 'ops@example.com' });
+  });
+
+  it('reads Email Routing settings and falls back to a disabled state for unused zones', async () => {
+    const missing = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: false,
+          errors: [{ code: 7003, message: 'not found' }],
+          messages: [],
+          result: null,
+        }),
+        { status: 404 },
+      ),
+    );
+    const missingClient = new CloudflareClient({
+      token: 'token',
+      accountId: 'account',
+      fetcher: missing,
+    });
+    await expect(
+      missingClient.getEmailRoutingSettings('zone-id', 'northstar.example.com'),
+    ).resolves.toEqual({
+      enabled: false,
+      status: 'disabled',
+      domain: 'northstar.example.com',
+    });
+
+    const present = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        response({ enabled: true, status: 'ready', name: 'northstar.example.com' }),
+      );
+    const presentClient = new CloudflareClient({
+      token: 'token',
+      accountId: 'account',
+      fetcher: present,
+    });
+    await expect(presentClient.getEmailRoutingSettings('zone-id')).resolves.toEqual({
+      enabled: true,
+      status: 'ready',
+      domain: 'northstar.example.com',
+    });
+  });
+
+  it('enables Email Routing settings with the wizard skipped', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        response({ enabled: true, status: 'ready', name: 'northstar.example.com' }),
+      );
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(client.setEmailRoutingSettings('zone-id', true)).resolves.toEqual({
+      enabled: true,
+      status: 'ready',
+      domain: 'northstar.example.com',
+    });
+    const [url, init] = fetcher.mock.calls[0]!;
+    expect(url).toContain('/zones/zone-id/email/routing');
+    expect(init?.method).toBe('PUT');
+    expect(JSON.parse(init?.body as string)).toEqual({ enabled: true, skip_wizard: true });
+  });
+
+  it('creates a literal forward rule and deletes it by provider id', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        response({
+          id: 'rule-id',
+          enabled: true,
+          actions: [{ type: 'forward', value: ['temidayoxyz@gmail.com'] }],
+          matchers: [{ type: 'literal', field: 'to', value: 'support@northstar.example.com' }],
+          name: null,
+        }),
+      )
+      .mockResolvedValueOnce(response(null));
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(
+      client.createEmailRoutingRule('zone-id', {
+        matcherEmail: 'support@northstar.example.com',
+        destinationEmail: 'temidayoxyz@gmail.com',
+        enabled: true,
+      }),
+    ).resolves.toEqual({
+      id: 'rule-id',
+      matcherEmail: 'support@northstar.example.com',
+      destinationEmail: 'temidayoxyz@gmail.com',
+      enabled: true,
+      name: null,
+    });
+    const [createUrl, createInit] = fetcher.mock.calls[0]!;
+    expect(createUrl).toContain('/zones/zone-id/email/routing/rules');
+    expect(createInit?.method).toBe('POST');
+    expect(JSON.parse(createInit?.body as string)).toEqual({
+      actions: [{ type: 'forward', value: ['temidayoxyz@gmail.com'] }],
+      matchers: [{ type: 'literal', field: 'to', value: 'support@northstar.example.com' }],
+      enabled: true,
+    });
+
+    await expect(client.deleteEmailRoutingRule('zone-id', 'rule-id')).resolves.toBeUndefined();
+    const [deleteUrl, deleteInit] = fetcher.mock.calls[1]!;
+    expect(deleteUrl).toContain('/zones/zone-id/email/routing/rules/rule-id');
+    expect(deleteInit?.method).toBe('DELETE');
+  });
+
+  it('toggles a rule by preserving its matchers and actions', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        response({
+          id: 'rule-id',
+          enabled: true,
+          actions: [{ type: 'forward', value: ['temidayoxyz@gmail.com'] }],
+          matchers: [{ type: 'literal', field: 'to', value: 'support@northstar.example.com' }],
+          name: 'Support forwards',
+          priority: 0,
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          id: 'rule-id',
+          enabled: false,
+          actions: [{ type: 'forward', value: ['temidayoxyz@gmail.com'] }],
+          matchers: [{ type: 'literal', field: 'to', value: 'support@northstar.example.com' }],
+          name: 'Support forwards',
+          priority: 0,
+        }),
+      );
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(client.updateEmailRoutingRule('zone-id', 'rule-id', false)).resolves.toMatchObject(
+      {
+        id: 'rule-id',
+        enabled: false,
+      },
+    );
+    const [, putInit] = fetcher.mock.calls[1]!;
+    expect(putInit?.method).toBe('PUT');
+    expect(JSON.parse(putInit?.body as string)).toEqual({
+      actions: [{ type: 'forward', value: ['temidayoxyz@gmail.com'] }],
+      matchers: [{ type: 'literal', field: 'to', value: 'support@northstar.example.com' }],
+      enabled: false,
+      name: 'Support forwards',
+      priority: 0,
+    });
+  });
+
+  it('reads the catch-all rule and enables it with a forwarding destination', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ success: false, errors: [], messages: [], result: null }), {
+          status: 404,
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          id: 'catch-all-id',
+          enabled: true,
+          actions: [{ type: 'forward', value: ['temidayoxyz@gmail.com'] }],
+          matchers: [{ type: 'all' }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          id: 'catch-all-id',
+          enabled: true,
+          actions: [{ type: 'forward', value: ['temidayoxyz@gmail.com'] }],
+          matchers: [{ type: 'all' }],
+        }),
+      );
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(client.getEmailRoutingCatchAll('zone-id')).resolves.toBeNull();
+    await expect(
+      client.setEmailRoutingCatchAll('zone-id', true, 'temidayoxyz@gmail.com'),
+    ).resolves.toEqual({ enabled: true, destinationEmail: 'temidayoxyz@gmail.com' });
+    const [url, init] = fetcher.mock.calls[2]!;
+    expect(url).toContain('/zones/zone-id/email/routing/rules/catch_all');
+    expect(init?.method).toBe('PUT');
+    expect(JSON.parse(init?.body as string)).toEqual({
+      enabled: true,
+      actions: [{ type: 'forward', value: ['temidayoxyz@gmail.com'] }],
+      matchers: [{ type: 'all' }],
+    });
+  });
+
+  it('refuses to enable the catch-all without a destination and disables it without a call', async () => {
+    const missing = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ success: false, errors: [], messages: [], result: null }), {
+        status: 404,
+      }),
+    );
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher: missing });
+
+    await expect(client.setEmailRoutingCatchAll('zone-id', true, null)).rejects.toThrow(
+      'A destination address is required',
+    );
+    await expect(client.setEmailRoutingCatchAll('zone-id', false, null)).resolves.toEqual({
+      enabled: false,
+      destinationEmail: null,
+    });
+  });
+
   it('verifies D1 Time Travel bookmarks without invoking restore', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response({ bookmark: 'bookmark-id' }));
     const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });

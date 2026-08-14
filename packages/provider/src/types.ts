@@ -186,6 +186,32 @@ export interface CloudflareAccessGroup {
   name: string;
 }
 
+export interface CloudflareEmailRoutingAddress {
+  id: string;
+  email: string;
+  verified: boolean;
+  createdAt: string | null;
+}
+
+export interface CloudflareEmailRoutingRule {
+  id: string;
+  matcherEmail: string;
+  destinationEmail: string;
+  enabled: boolean;
+  name: string | null;
+}
+
+export interface CloudflareEmailRoutingStatus {
+  enabled: boolean;
+  status: string;
+  domain: string | null;
+}
+
+export interface CloudflareEmailRoutingCatchAll {
+  enabled: boolean;
+  destinationEmail: string | null;
+}
+
 export interface BuildAccountLimits {
   limitReached: boolean | null;
   refreshesAt: string | null;

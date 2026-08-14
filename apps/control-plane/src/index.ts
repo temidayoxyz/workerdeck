@@ -3,6 +3,8 @@ import {
   attachDomainInputSchema,
   createDeploymentInputSchema,
   createProjectInputSchema,
+  createEmailRoutingAddressInputSchema,
+  createEmailRoutingRuleInputSchema,
   createResourceInputSchema,
   environmentVariableKeySchema,
   inviteMemberInputSchema,
@@ -11,8 +13,11 @@ import {
   rollbackDeploymentInputSchema,
   setCronSchedulesInputSchema,
   setCacheRulesInputSchema,
+  setEmailRoutingCatchAllInputSchema,
+  setEmailRoutingStatusInputSchema,
   setTrafficInputSchema,
   repositoryInspectionSchema,
+  updateEmailRoutingRuleInputSchema,
   upsertEnvironmentVariableInputSchema,
   updateMemberInputSchema,
   type AccessGroup,
@@ -21,6 +26,7 @@ import {
   type CacheRule,
   type CreateResourceInput,
   type DashboardSummary,
+  type EmailRoutingData,
   type ProjectCache,
   type RecoveryResource,
   type ResourceKind,
@@ -58,6 +64,7 @@ import {
   revalidationGenerationKey,
   revalidationKeyFor,
 } from './cache';
+import { isVerifiedDestination, selectEmailRoutingZone } from './email-routing';
 import { GitHubAppClient } from './github';
 import { Repository, type DeploymentTarget } from './repository';
 import { requestContext, securityHeaders, verifyMutationOrigin } from './security';
@@ -1636,6 +1643,207 @@ app.post(
   },
 );
 
+app.get(
+  '/api/v1/projects/:projectId/environments/:environmentId/email-routing',
+  async (context) => {
+    const repository = new Repository(context.env.DB);
+    const target = await repository.getDeploymentTarget(
+      context.req.param('projectId'),
+      context.req.param('environmentId'),
+    );
+    const requestedZoneId = context.req.query('zoneId') ?? null;
+    const data = await emailRoutingDataFor(context, target, requestedZoneId);
+    if (requestedZoneId && !data.zones.some((zone) => zone.zoneId === requestedZoneId)) {
+      throw new AppError(
+        409,
+        'EMAIL_ROUTING_ZONE_INVALID',
+        'That zone is not attached to this project.',
+      );
+    }
+    return context.json({ data, requestId: context.get('requestId') });
+  },
+);
+
+app.post(
+  '/api/v1/projects/:projectId/environments/:environmentId/email-routing/rules',
+  async (context) => {
+    const parsed = createEmailRoutingRuleInputSchema.safeParse(
+      await context.req.json().catch(() => null),
+    );
+    if (!parsed.success) {
+      throw new AppError(
+        422,
+        'INVALID_EMAIL_ROUTING_RULE',
+        'Enter a valid source address and destination address.',
+        parsed.error.flatten(),
+      );
+    }
+    const repository = new Repository(context.env.DB);
+    const target = await repository.getDeploymentTarget(
+      context.req.param('projectId'),
+      context.req.param('environmentId'),
+    );
+    const zone = await requireEmailRoutingZone(context, target, parsed.data.zoneId);
+    const client = cloudflareClient(context);
+    await requireVerifiedDestination(client, parsed.data.destinationEmail);
+    await client.createEmailRoutingRule(zone.zoneId, {
+      matcherEmail: parsed.data.matcherEmail,
+      destinationEmail: parsed.data.destinationEmail,
+      enabled: parsed.data.enabled,
+    });
+    const data = await emailRoutingDataFor(context, target, zone.zoneId);
+    return context.json({ data, requestId: context.get('requestId') }, 201);
+  },
+);
+
+app.put(
+  '/api/v1/projects/:projectId/environments/:environmentId/email-routing/rules/:ruleId',
+  async (context) => {
+    const parsed = updateEmailRoutingRuleInputSchema.safeParse(
+      await context.req.json().catch(() => null),
+    );
+    if (!parsed.success) {
+      throw new AppError(
+        422,
+        'INVALID_EMAIL_ROUTING_RULE',
+        'Select a zone before toggling a routing rule.',
+        parsed.error.flatten(),
+      );
+    }
+    const repository = new Repository(context.env.DB);
+    const target = await repository.getDeploymentTarget(
+      context.req.param('projectId'),
+      context.req.param('environmentId'),
+    );
+    const zone = await requireEmailRoutingZone(context, target, parsed.data.zoneId);
+    await cloudflareClient(context).updateEmailRoutingRule(
+      zone.zoneId,
+      context.req.param('ruleId'),
+      parsed.data.enabled,
+    );
+    const data = await emailRoutingDataFor(context, target, zone.zoneId);
+    return context.json({ data, requestId: context.get('requestId') });
+  },
+);
+
+app.delete(
+  '/api/v1/projects/:projectId/environments/:environmentId/email-routing/rules/:ruleId',
+  async (context) => {
+    const zoneId = context.req.query('zoneId');
+    if (!zoneId) {
+      throw new AppError(
+        422,
+        'EMAIL_ROUTING_ZONE_REQUIRED',
+        'Select a zone before deleting a routing rule.',
+      );
+    }
+    const repository = new Repository(context.env.DB);
+    const target = await repository.getDeploymentTarget(
+      context.req.param('projectId'),
+      context.req.param('environmentId'),
+    );
+    const zone = await requireEmailRoutingZone(context, target, zoneId);
+    await cloudflareClient(context).deleteEmailRoutingRule(
+      zone.zoneId,
+      context.req.param('ruleId'),
+    );
+    const data = await emailRoutingDataFor(context, target, zone.zoneId);
+    return context.json({ data, requestId: context.get('requestId') });
+  },
+);
+
+app.put(
+  '/api/v1/projects/:projectId/environments/:environmentId/email-routing/status',
+  async (context) => {
+    const parsed = setEmailRoutingStatusInputSchema.safeParse(
+      await context.req.json().catch(() => null),
+    );
+    if (!parsed.success) {
+      throw new AppError(
+        422,
+        'INVALID_EMAIL_ROUTING_STATUS',
+        'Select a zone before changing Email Routing status.',
+        parsed.error.flatten(),
+      );
+    }
+    const repository = new Repository(context.env.DB);
+    const target = await repository.getDeploymentTarget(
+      context.req.param('projectId'),
+      context.req.param('environmentId'),
+    );
+    const zone = await requireEmailRoutingZone(context, target, parsed.data.zoneId);
+    await cloudflareClient(context).setEmailRoutingSettings(zone.zoneId, parsed.data.enabled);
+    const data = await emailRoutingDataFor(context, target, zone.zoneId);
+    return context.json({ data, requestId: context.get('requestId') });
+  },
+);
+
+app.post(
+  '/api/v1/projects/:projectId/environments/:environmentId/email-routing/addresses',
+  async (context) => {
+    const parsed = createEmailRoutingAddressInputSchema.safeParse(
+      await context.req.json().catch(() => null),
+    );
+    if (!parsed.success) {
+      throw new AppError(
+        422,
+        'INVALID_EMAIL_ROUTING_ADDRESS',
+        'Enter a valid destination email address.',
+        parsed.error.flatten(),
+      );
+    }
+    const repository = new Repository(context.env.DB);
+    const target = await repository.getDeploymentTarget(
+      context.req.param('projectId'),
+      context.req.param('environmentId'),
+    );
+    await cloudflareClient(context).createEmailRoutingDestinationAddress(parsed.data.email);
+    const data = await emailRoutingDataFor(context, target, context.req.query('zoneId') ?? null);
+    return context.json({ data, requestId: context.get('requestId') }, 201);
+  },
+);
+
+app.put(
+  '/api/v1/projects/:projectId/environments/:environmentId/email-routing/catch-all',
+  async (context) => {
+    const parsed = setEmailRoutingCatchAllInputSchema.safeParse(
+      await context.req.json().catch(() => null),
+    );
+    if (!parsed.success) {
+      throw new AppError(
+        422,
+        'INVALID_EMAIL_ROUTING_CATCH_ALL',
+        'Choose a zone and a verified destination for the catch-all rule.',
+        parsed.error.flatten(),
+      );
+    }
+    if (parsed.data.enabled && !parsed.data.destinationEmail) {
+      throw new AppError(
+        422,
+        'EMAIL_ROUTING_DESTINATION_REQUIRED',
+        'Choose a destination address before enabling the catch-all rule.',
+      );
+    }
+    const repository = new Repository(context.env.DB);
+    const target = await repository.getDeploymentTarget(
+      context.req.param('projectId'),
+      context.req.param('environmentId'),
+    );
+    const zone = await requireEmailRoutingZone(context, target, parsed.data.zoneId);
+    const client = cloudflareClient(context);
+    if (parsed.data.enabled && parsed.data.destinationEmail) {
+      await requireVerifiedDestination(client, parsed.data.destinationEmail);
+    }
+    await client.setEmailRoutingCatchAll(
+      zone.zoneId,
+      parsed.data.enabled,
+      parsed.data.destinationEmail,
+    );
+    const data = await emailRoutingDataFor(context, target, zone.zoneId);
+    return context.json({ data, requestId: context.get('requestId') });
+  },
+);
+
 app.get('/api/v1/access/team', async (context) => {
   return context.json({
     data: await workspaceAccess(context),
@@ -2432,6 +2640,79 @@ async function projectCacheZones(
       hostname: domain.hostname,
     })),
   );
+}
+
+async function emailRoutingZones(
+  context: Context<AppEnv>,
+  target: DeploymentTarget,
+): Promise<Array<{ zoneId: string; zoneName: string; hostnames: string[] }>> {
+  return projectCacheZones(context, target);
+}
+
+async function requireEmailRoutingZone(
+  context: Context<AppEnv>,
+  target: DeploymentTarget,
+  zoneId: string,
+): Promise<{ zoneId: string; zoneName: string; hostnames: string[] }> {
+  const zone = (await emailRoutingZones(context, target)).find(
+    (candidate) => candidate.zoneId === zoneId,
+  );
+  if (!zone) {
+    throw new AppError(
+      409,
+      'EMAIL_ROUTING_ZONE_INVALID',
+      'That zone is not attached to this project. Attach a custom domain before routing email.',
+    );
+  }
+  return zone;
+}
+
+async function requireVerifiedDestination(
+  client: CloudflareClient,
+  destinationEmail: string,
+): Promise<void> {
+  const addresses = await client.listEmailRoutingDestinationAddresses();
+  if (!isVerifiedDestination(addresses, destinationEmail)) {
+    throw new AppError(
+      409,
+      'EMAIL_ROUTING_ADDRESS_UNVERIFIED',
+      `Verify ${destinationEmail} in Cloudflare before forwarding email to it.`,
+    );
+  }
+}
+
+async function emailRoutingDataFor(
+  context: Context<AppEnv>,
+  target: DeploymentTarget,
+  requestedZoneId: string | null,
+): Promise<EmailRoutingData> {
+  const client = cloudflareClient(context);
+  const [zones, addresses] = await Promise.all([
+    emailRoutingZones(context, target),
+    client.listEmailRoutingDestinationAddresses(),
+  ]);
+  const selected = selectEmailRoutingZone(zones, requestedZoneId);
+  let status: EmailRoutingData['status'] = null;
+  let rules: EmailRoutingData['rules'] = [];
+  let catchAll: EmailRoutingData['catchAll'] = null;
+  if (selected) {
+    const [selectedStatus, selectedRules, selectedCatchAll] = await Promise.all([
+      client.getEmailRoutingSettings(selected.zoneId, selected.zoneName),
+      client.listEmailRoutingRules(selected.zoneId),
+      client.getEmailRoutingCatchAll(selected.zoneId),
+    ]);
+    status = selectedStatus;
+    rules = selectedRules;
+    catchAll = selectedCatchAll;
+  }
+  return {
+    zones,
+    selectedZoneId: selected?.zoneId ?? null,
+    status,
+    addresses,
+    rules,
+    catchAll,
+  };
 }
 
 async function projectCacheData(

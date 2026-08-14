@@ -14,6 +14,7 @@ const tabs = [
   { label: 'Variables', path: '/variables' },
   { label: 'Cron', path: '/cron' },
   { label: 'Cache', path: '/cache' },
+  { label: 'Email', path: '/email' },
   { label: 'Settings', path: '/settings' },
 ];
 

@@ -1,5 +1,6 @@
 import type {
   DashboardSummary,
+  EmailRoutingData,
   ManagedResource,
   ProjectCache,
   WebAnalytics,
@@ -23,12 +24,14 @@ import {
   Globe2,
   KeyRound,
   LockKeyhole,
+  Mail,
   Plus,
   RefreshCw,
   Rocket,
   Settings,
   ShieldCheck,
   Trash2,
+  Users,
   X,
 } from '../components/icon';
 import { useEffect, useRef, useState } from 'react';
@@ -50,14 +53,21 @@ import {
   getBuildLogs,
   getEnvironmentVariables,
   getManagedResources,
+  getProjectEmailRouting,
   getProjectCache,
   getProjectDomains,
   getWebAnalytics,
   getWorkerAnalytics,
+  createProjectEmailRoutingAddress,
+  createProjectEmailRoutingRule,
+  deleteProjectEmailRoutingRule,
   purgeProjectCache,
   revalidateProjectCache,
+  setProjectEmailRoutingCatchAll,
+  setProjectEmailRoutingStatus,
   setProjectCacheRules,
   setProjectCacheSettings,
+  updateProjectEmailRoutingRule,
   upsertEnvironmentVariable,
   type CacheRuleInput,
 } from '../lib/api';
@@ -1925,6 +1935,457 @@ export function ProjectCachePage({
               )}
             </section>
           </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+export function ProjectEmailRoutingPage({
+  summary,
+  onDeploy,
+}: {
+  summary: DashboardSummary | null;
+  onDeploy: (projectId: string, environmentId: string) => Promise<void>;
+}): React.JSX.Element {
+  const { projectId } = useParams();
+  const project = summary?.projects.find((candidate) => candidate.id === projectId);
+  const environment = summary?.environments.find(
+    (candidate) => candidate.projectId === projectId && candidate.kind === 'production',
+  );
+  const [data, setData] = useState<EmailRoutingData | null>(null);
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+  const [draftMatcher, setDraftMatcher] = useState('');
+  const [draftDestination, setDraftDestination] = useState('');
+  const [draftAddress, setDraftAddress] = useState('');
+  const [catchAllDestination, setCatchAllDestination] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const apply = (result: EmailRoutingData) => {
+    setData(result);
+    setCatchAllDestination(result.catchAll?.destinationEmail ?? '');
+  };
+
+  useEffect(() => {
+    if (!projectId || !environment) return;
+    let active = true;
+    setLoadState('loading');
+    void getProjectEmailRouting(projectId, environment.id)
+      .then((result) => {
+        if (!active) return;
+        apply(result);
+        setLoadState('ready');
+      })
+      .catch(() => {
+        if (active) setLoadState('unavailable');
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId, environment?.id]);
+
+  if (!project) return <MissingProject />;
+  const selectedZoneId = data?.selectedZoneId ?? null;
+  const verified = (data?.addresses ?? []).filter((address) => address.verified);
+  const fail = (reason: unknown, fallback: string) => {
+    setError(reason instanceof Error ? reason.message : fallback);
+  };
+  const selectZone = (zoneId: string) => {
+    if (!environment) return;
+    setLoadState('loading');
+    setError(null);
+    setNotice(null);
+    void getProjectEmailRouting(project.id, environment.id, zoneId || undefined)
+      .then((result) => {
+        apply(result);
+        setLoadState('ready');
+      })
+      .catch(() => setLoadState('unavailable'));
+  };
+  const toggleStatus = (enabled: boolean) => {
+    if (!environment || !selectedZoneId) return;
+    setBusy('status');
+    setError(null);
+    setNotice(null);
+    void setProjectEmailRoutingStatus(project.id, environment.id, {
+      zoneId: selectedZoneId,
+      enabled,
+    })
+      .then((result) => {
+        apply(result);
+        setNotice(enabled ? 'Email Routing enabled for this zone.' : 'Email Routing disabled.');
+      })
+      .catch((reason: unknown) => fail(reason, 'Email Routing status could not be changed.'))
+      .finally(() => setBusy(null));
+  };
+  const addRule = () => {
+    if (!environment || !selectedZoneId) return;
+    const matcherEmail = draftMatcher.trim().toLowerCase();
+    const destinationEmail = draftDestination.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(matcherEmail)) {
+      setError('Enter a valid source address, like support@your-domain.com.');
+      return;
+    }
+    if (!destinationEmail) {
+      setError('Choose a verified destination address.');
+      return;
+    }
+    setBusy('rule-add');
+    setError(null);
+    setNotice(null);
+    void createProjectEmailRoutingRule(project.id, environment.id, {
+      zoneId: selectedZoneId,
+      matcherEmail,
+      destinationEmail,
+      enabled: true,
+    })
+      .then((result) => {
+        apply(result);
+        setDraftMatcher('');
+        setDraftDestination('');
+        setNotice(`${matcherEmail} now forwards to ${destinationEmail}.`);
+      })
+      .catch((reason: unknown) => fail(reason, 'The routing rule could not be created.'))
+      .finally(() => setBusy(null));
+  };
+  const toggleRule = (ruleId: string, enabled: boolean) => {
+    if (!environment || !selectedZoneId) return;
+    setBusy(`rule-${ruleId}`);
+    setError(null);
+    setNotice(null);
+    void updateProjectEmailRoutingRule(project.id, environment.id, ruleId, {
+      zoneId: selectedZoneId,
+      enabled,
+    })
+      .then((result) => {
+        apply(result);
+        setNotice(enabled ? 'Rule enabled.' : 'Rule paused.');
+      })
+      .catch((reason: unknown) => fail(reason, 'The routing rule could not be updated.'))
+      .finally(() => setBusy(null));
+  };
+  const removeRule = (ruleId: string) => {
+    if (!environment || !selectedZoneId) return;
+    setBusy(`rule-${ruleId}`);
+    setError(null);
+    setNotice(null);
+    void deleteProjectEmailRoutingRule(project.id, environment.id, ruleId, selectedZoneId)
+      .then((result) => {
+        apply(result);
+        setNotice('Rule removed.');
+      })
+      .catch((reason: unknown) => fail(reason, 'The routing rule could not be removed.'))
+      .finally(() => setBusy(null));
+  };
+  const addAddress = () => {
+    if (!environment) return;
+    const email = draftAddress.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('Enter a valid destination email address.');
+      return;
+    }
+    setBusy('address-add');
+    setError(null);
+    setNotice(null);
+    void createProjectEmailRoutingAddress(
+      project.id,
+      environment.id,
+      email,
+      selectedZoneId ?? undefined,
+    )
+      .then((result) => {
+        apply(result);
+        setDraftAddress('');
+        setNotice(`Cloudflare sent a verification link to ${email}.`);
+      })
+      .catch((reason: unknown) => fail(reason, 'The destination address could not be added.'))
+      .finally(() => setBusy(null));
+  };
+  const saveCatchAll = (enabled: boolean, destinationEmail: string | null) => {
+    if (!environment || !selectedZoneId) return;
+    setBusy('catch-all');
+    setError(null);
+    setNotice(null);
+    void setProjectEmailRoutingCatchAll(project.id, environment.id, {
+      zoneId: selectedZoneId,
+      enabled,
+      destinationEmail,
+    })
+      .then((result) => {
+        apply(result);
+        setNotice(
+          enabled && destinationEmail
+            ? `Unmatched mail now forwards to ${destinationEmail}.`
+            : 'Catch-all rule disabled.',
+        );
+      })
+      .catch((reason: unknown) => fail(reason, 'The catch-all rule could not be saved.'))
+      .finally(() => setBusy(null));
+  };
+  const toggleCatchAll = (enabled: boolean) => {
+    if (enabled) {
+      const destination = (catchAllDestination || verified[0]?.email) ?? null;
+      if (!destination) {
+        setError('Verify a destination address before enabling the catch-all rule.');
+        return;
+      }
+      saveCatchAll(true, destination);
+      return;
+    }
+    saveCatchAll(false, null);
+  };
+  return (
+    <div className="project-page">
+      <ProjectHeader
+        project={project}
+        environment={environment}
+        onDeploy={() => environment && void onDeploy(project.id, environment.id)}
+      />
+      <section className="project-section-intro">
+        <div>
+          <h2>Email Routing</h2>
+          <p>Forward mail sent to your custom domains to verified destinations.</p>
+        </div>
+        {error ? <div className="inline-alert">{error}</div> : null}
+        {notice ? <div className="cache-notice">{notice}</div> : null}
+      </section>
+      {loadState === 'loading' ? (
+        <section className="panel cache-state-panel">
+          <p className="muted-copy">Loading Email Routing controls…</p>
+        </section>
+      ) : loadState === 'unavailable' ? (
+        <section className="panel cache-state-panel">
+          <AlertCircle size={20} />
+          <p>WorkerDeck could not load Email Routing for this project.</p>
+        </section>
+      ) : data ? (
+        <>
+          <section className="panel email-zone-panel">
+            <div className="section-heading">
+              <h2>
+                Zone <span>· source domain</span>
+              </h2>
+              <Globe2 size={18} />
+            </div>
+            {data.zones.length === 0 ? (
+              <div className="email-zone-empty">
+                <Globe2 size={20} />
+                <p>
+                  Email Routing runs from custom project zones, not workers.dev subdomains. Attach a
+                  domain to start.
+                </p>
+                <Link className="button button--secondary" to={`/projects/${project.id}/domains`}>
+                  <Plus size={15} /> Attach a domain
+                </Link>
+              </div>
+            ) : (
+              <label className="email-zone-select">
+                <span>Route email for</span>
+                <select
+                  value={selectedZoneId ?? ''}
+                  disabled={busy !== null}
+                  onChange={(event) => selectZone(event.target.value)}
+                >
+                  {data.zones.map((zone) => (
+                    <option key={zone.zoneId} value={zone.zoneId}>
+                      {zone.zoneName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </section>
+          {selectedZoneId ? (
+            <>
+              <section className="panel email-status-panel">
+                <div className="section-heading">
+                  <h2>
+                    Service <span>· {data.status?.status ?? 'not configured'}</span>
+                  </h2>
+                  <Mail size={18} />
+                </div>
+                <label className="email-toggle">
+                  <input
+                    type="checkbox"
+                    checked={data.status?.enabled ?? false}
+                    disabled={busy !== null}
+                    onChange={(event) => toggleStatus(event.target.checked)}
+                  />
+                  <span>{data.status?.enabled ? 'Enabled' : 'Disabled'}</span>
+                </label>
+                <p className="muted-copy">
+                  {data.status?.enabled
+                    ? 'Cloudflare accepts mail for this zone and applies the rules below.'
+                    : 'Inbound mail is not accepted for this zone while Email Routing is disabled.'}
+                </p>
+              </section>
+              <div className="email-grid">
+                <section className="panel email-addresses-panel">
+                  <div className="section-heading">
+                    <h2>
+                      Destinations <span>· {verified.length} verified</span>
+                    </h2>
+                    <Users size={18} />
+                  </div>
+                  <div className="email-address-form">
+                    <input
+                      value={draftAddress}
+                      onChange={(event) => setDraftAddress(event.target.value)}
+                      placeholder="person@example.com"
+                      aria-label="Destination address"
+                      disabled={busy !== null}
+                    />
+                    <button
+                      className="button button--secondary"
+                      type="button"
+                      disabled={!draftAddress.trim() || busy !== null}
+                      onClick={addAddress}
+                    >
+                      <Plus size={15} /> Add
+                    </button>
+                  </div>
+                  <div className="email-address-list">
+                    {data.addresses.map((address) => (
+                      <div className="email-address-row" key={address.id}>
+                        <i
+                          className={
+                            address.verified
+                              ? 'email-verify-dot email-verify-dot--verified'
+                              : 'email-verify-dot'
+                          }
+                        />
+                        <code>{address.email}</code>
+                        <small>{address.verified ? 'Verified' : 'Pending verification'}</small>
+                      </div>
+                    ))}
+                    {data.addresses.length === 0 ? (
+                      <p className="muted-copy">
+                        Add a destination address. Cloudflare sends a verification link before it
+                        can receive mail.
+                      </p>
+                    ) : null}
+                  </div>
+                </section>
+                <section className="panel email-rules-panel">
+                  <div className="section-heading">
+                    <h2>
+                      Routing rules <span>· {data.rules.length} total</span>
+                    </h2>
+                    <ArrowRight size={18} />
+                  </div>
+                  <div className="email-rule-form">
+                    <input
+                      value={draftMatcher}
+                      onChange={(event) => setDraftMatcher(event.target.value)}
+                      placeholder="support@northstar.example.com"
+                      aria-label="Source address"
+                      disabled={busy !== null}
+                    />
+                    <select
+                      value={draftDestination}
+                      disabled={verified.length === 0 || busy !== null}
+                      onChange={(event) => setDraftDestination(event.target.value)}
+                      aria-label="Forward to destination"
+                    >
+                      <option value="">Forward to…</option>
+                      {verified.map((address) => (
+                        <option key={address.id} value={address.email}>
+                          {address.email}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      className="button button--secondary"
+                      type="button"
+                      disabled={!draftMatcher.trim() || !draftDestination || busy !== null}
+                      onClick={addRule}
+                    >
+                      <Plus size={15} /> Add rule
+                    </button>
+                  </div>
+                  <div className="email-rule-list">
+                    {data.rules.map((rule) => (
+                      <div className="email-rule-row" key={rule.id}>
+                        <label className="email-rule-enable">
+                          <input
+                            type="checkbox"
+                            checked={rule.enabled}
+                            disabled={busy !== null}
+                            onChange={(event) => toggleRule(rule.id, event.target.checked)}
+                          />
+                          <span>{rule.enabled ? 'Enabled' : 'Paused'}</span>
+                        </label>
+                        <span className="email-rule-path">
+                          <code>{rule.matcherEmail}</code>
+                          <small>→ {rule.destinationEmail}</small>
+                        </span>
+                        <button
+                          className="row-action danger-action"
+                          type="button"
+                          aria-label={`Remove ${rule.matcherEmail}`}
+                          disabled={busy !== null}
+                          onClick={() => removeRule(rule.id)}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    ))}
+                    {data.rules.length === 0 ? (
+                      <p className="muted-copy">
+                        No routing rules yet. Add a source address to start forwarding mail.
+                      </p>
+                    ) : null}
+                  </div>
+                  {verified.length === 0 ? (
+                    <p className="muted-copy email-rule-hint">
+                      Verify at least one destination address before adding rules.
+                    </p>
+                  ) : null}
+                </section>
+              </div>
+              <section className="panel email-catchall-panel">
+                <div className="section-heading">
+                  <h2>
+                    Catch-all <span>· unmatched mail</span>
+                  </h2>
+                  <Mail size={18} />
+                </div>
+                <label className="email-toggle">
+                  <input
+                    type="checkbox"
+                    checked={data.catchAll?.enabled ?? false}
+                    disabled={busy !== null}
+                    onChange={(event) => toggleCatchAll(event.target.checked)}
+                  />
+                  <span>{data.catchAll?.enabled ? 'Forward unmatched mail' : 'Disabled'}</span>
+                </label>
+                {data.catchAll?.enabled ? (
+                  <label className="email-catchall-select">
+                    <span>Forward to</span>
+                    <select
+                      value={catchAllDestination}
+                      disabled={busy !== null}
+                      onChange={(event) => saveCatchAll(true, event.target.value)}
+                    >
+                      <option value="">Choose a destination…</option>
+                      {verified.map((address) => (
+                        <option key={address.id} value={address.email}>
+                          {address.email}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <p className="muted-copy">
+                    Enable the catch-all to forward mail that matches no rule to one verified
+                    destination.
+                  </p>
+                )}
+              </section>
+            </>
+          ) : null}
         </>
       ) : null}
     </div>

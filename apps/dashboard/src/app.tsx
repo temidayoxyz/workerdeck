@@ -21,6 +21,7 @@ import {
   ProjectCronPage,
   ProjectDeploymentsPage,
   ProjectDomainsPage,
+  ProjectEmailRoutingPage,
   ProjectLogsPage,
   ProjectPage,
   ProjectResourcesPage,
@@ -223,6 +224,10 @@ export function App(): React.JSX.Element {
         <Route
           path="projects/:projectId/cache"
           element={<ProjectCachePage summary={summary} onDeploy={handleDeploy} />}
+        />
+        <Route
+          path="projects/:projectId/email"
+          element={<ProjectEmailRoutingPage summary={summary} onDeploy={handleDeploy} />}
         />
         <Route
           path="projects/:projectId/settings"

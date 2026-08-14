@@ -4667,6 +4667,231 @@ select:focus-visible {
   }
 }
 
+/* Email Routing ------------------------------------------------------------
+ * Per-project Cloudflare Email Routing controls for custom zones.
+ */
+.email-zone-panel,
+.email-status-panel,
+.email-addresses-panel,
+.email-rules-panel,
+.email-catchall-panel {
+  min-width: 0;
+}
+.email-zone-select {
+  display: flex;
+  max-width: 420px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 18px 18px;
+}
+.app-shell .email-zone-select > span,
+.app-shell .email-catchall-select > span {
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+.email-zone-select select,
+.email-catchall-select select {
+  width: 100%;
+  padding: 8px 10px;
+  color: var(--ink);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.email-zone-empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px;
+}
+.email-zone-empty svg {
+  flex-shrink: 0;
+  color: var(--cyan);
+}
+.app-shell .email-zone-empty p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+.email-zone-empty .button {
+  flex-shrink: 0;
+}
+.email-status-panel,
+.email-catchall-panel {
+  margin-top: 12px;
+}
+.email-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 18px 0;
+  cursor: pointer;
+}
+.email-toggle input {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--green);
+}
+.app-shell .email-toggle span {
+  color: var(--ink);
+  font-size: 13px;
+}
+.email-status-panel .muted-copy,
+.email-catchall-panel .muted-copy {
+  margin: 12px 18px 18px;
+}
+.email-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.2fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+.email-address-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.email-address-form input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  color: var(--ink);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.email-address-form input:focus-visible,
+.email-rule-form input:focus-visible,
+.email-rule-form select:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+.email-address-list {
+  padding: 4px 18px;
+}
+.email-address-row {
+  display: grid;
+  min-height: 46px;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.email-address-row:last-child {
+  border-bottom: 0;
+}
+.app-shell .email-address-row code {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-shell .email-address-row small {
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+.email-verify-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--amber);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px var(--amber-soft);
+}
+.email-verify-dot--verified {
+  background: var(--green);
+  box-shadow: 0 0 0 3px var(--green-soft);
+}
+.email-rule-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.email-rule-form input,
+.email-rule-form select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  color: var(--ink);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.email-rule-form input {
+  font-family: 'IBM Plex Mono', monospace;
+}
+.email-rule-list {
+  padding: 4px 18px;
+}
+.email-rule-row {
+  display: grid;
+  min-height: 58px;
+  grid-template-columns: 90px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.email-rule-row:last-child {
+  border-bottom: 0;
+}
+.email-rule-enable {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.app-shell .email-rule-enable span {
+  font-size: 12px;
+}
+.email-rule-enable input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--green);
+}
+.email-rule-path {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.app-shell .email-rule-path code {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+.app-shell .email-rule-path small {
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+.email-rule-hint,
+.email-addresses-panel .muted-copy,
+.email-rules-panel .muted-copy {
+  margin: 12px 18px 16px;
+}
+.email-catchall-select {
+  display: flex;
+  max-width: 420px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 18px 18px;
+}
+
+@media (max-width: 850px) {
+  .email-grid {
+    grid-template-columns: 1fr;
+  }
+  .email-rule-form {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Team & roles -------------------------------------------------------------
  * Workspace members mapped to Cloudflare Access groups by role.
  */

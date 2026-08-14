@@ -671,6 +671,74 @@ export const accessTeamSchema = z.object({
   }),
 });
 
+export const emailRoutingAddressSchema = z.object({
+  id: z.string().min(1).max(64),
+  email: z.string().email(),
+  verified: z.boolean(),
+  createdAt: isoDateSchema.nullable(),
+});
+
+export const emailRoutingRuleSchema = z.object({
+  id: z.string().min(1).max(64),
+  matcherEmail: z.string().email(),
+  destinationEmail: z.string().email(),
+  enabled: z.boolean(),
+  name: z.string().max(256).nullable(),
+});
+
+export const emailRoutingStatusSchema = z.object({
+  enabled: z.boolean(),
+  status: z.string().min(1).max(64),
+  domain: z.string().min(1).max(253).nullable(),
+});
+
+export const emailRoutingCatchAllSchema = z.object({
+  enabled: z.boolean(),
+  destinationEmail: z.string().email().nullable(),
+});
+
+export const emailRoutingZoneRefSchema = z.object({
+  zoneId: z.string().min(1).max(64),
+  zoneName: z.string().min(1).max(253),
+  hostnames: z.array(z.string().min(1).max(253)),
+});
+
+export const emailRoutingDataSchema = z.object({
+  zones: z.array(emailRoutingZoneRefSchema),
+  selectedZoneId: z.string().min(1).max(64).nullable(),
+  status: emailRoutingStatusSchema.nullable(),
+  addresses: z.array(emailRoutingAddressSchema),
+  rules: z.array(emailRoutingRuleSchema),
+  catchAll: emailRoutingCatchAllSchema.nullable(),
+});
+
+export const createEmailRoutingRuleInputSchema = z.object({
+  zoneId: z.string().min(1).max(64),
+  matcherEmail: z.string().trim().toLowerCase().email(),
+  destinationEmail: z.string().trim().toLowerCase().email(),
+  enabled: z.boolean().default(true),
+});
+
+export const updateEmailRoutingRuleInputSchema = z.object({
+  zoneId: z.string().min(1).max(64),
+  enabled: z.boolean(),
+});
+
+export const setEmailRoutingStatusInputSchema = z.object({
+  zoneId: z.string().min(1).max(64),
+  enabled: z.boolean(),
+});
+
+export const createEmailRoutingAddressInputSchema = z.object({
+  email: z.string().trim().toLowerCase().email(),
+});
+
+export const setEmailRoutingCatchAllInputSchema = z.object({
+  zoneId: z.string().min(1).max(64),
+  enabled: z.boolean(),
+  destinationEmail: z.string().trim().toLowerCase().email().nullable(),
+});
+
 export const apiErrorSchema = z.object({
   error: z.object({
     code: z.string(),
@@ -692,6 +760,17 @@ export type InviteMemberInput = z.infer<typeof inviteMemberInputSchema>;
 export type UpdateMemberInput = z.infer<typeof updateMemberInputSchema>;
 export type AccessGroup = z.infer<typeof accessGroupSchema>;
 export type AccessTeam = z.infer<typeof accessTeamSchema>;
+export type EmailRoutingAddress = z.infer<typeof emailRoutingAddressSchema>;
+export type EmailRoutingRule = z.infer<typeof emailRoutingRuleSchema>;
+export type EmailRoutingStatus = z.infer<typeof emailRoutingStatusSchema>;
+export type EmailRoutingCatchAll = z.infer<typeof emailRoutingCatchAllSchema>;
+export type EmailRoutingZoneRef = z.infer<typeof emailRoutingZoneRefSchema>;
+export type EmailRoutingData = z.infer<typeof emailRoutingDataSchema>;
+export type CreateEmailRoutingRuleInput = z.infer<typeof createEmailRoutingRuleInputSchema>;
+export type UpdateEmailRoutingRuleInput = z.infer<typeof updateEmailRoutingRuleInputSchema>;
+export type SetEmailRoutingStatusInput = z.infer<typeof setEmailRoutingStatusInputSchema>;
+export type CreateEmailRoutingAddressInput = z.infer<typeof createEmailRoutingAddressInputSchema>;
+export type SetEmailRoutingCatchAllInput = z.infer<typeof setEmailRoutingCatchAllInputSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectInputSchema>;
 export type CreateDeploymentInput = z.infer<typeof createDeploymentInputSchema>;
 export type CreateResourceInput = z.infer<typeof createResourceInputSchema>;

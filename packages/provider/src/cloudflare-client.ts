@@ -24,6 +24,10 @@ import type {
   WebAnalyticsRows,
   CloudflareZoneCacheRuleset,
   CloudflareAccessGroup,
+  CloudflareEmailRoutingAddress,
+  CloudflareEmailRoutingRule,
+  CloudflareEmailRoutingStatus,
+  CloudflareEmailRoutingCatchAll,
   BuildAccountLimits,
 } from './types';
 
@@ -553,6 +557,153 @@ export class CloudflareClient {
       `/accounts/${accountId}/access/groups/${encodeURIComponent(groupId)}`,
       z.unknown(),
       { method: 'DELETE' },
+    );
+  }
+
+  async listEmailRoutingDestinationAddresses(): Promise<CloudflareEmailRoutingAddress[]> {
+    const accountId = this.#requireAccountId();
+    return this.#request(
+      `/accounts/${accountId}/email/routing/addresses`,
+      z.array(emailRoutingAddressSchema),
+    );
+  }
+
+  async createEmailRoutingDestinationAddress(
+    email: string,
+  ): Promise<CloudflareEmailRoutingAddress> {
+    const accountId = this.#requireAccountId();
+    return this.#request(
+      `/accounts/${accountId}/email/routing/addresses`,
+      emailRoutingAddressSchema,
+      { method: 'POST', body: JSON.stringify({ email }) },
+    );
+  }
+
+  async getEmailRoutingSettings(
+    zoneId: string,
+    zoneName?: string,
+  ): Promise<CloudflareEmailRoutingStatus> {
+    try {
+      return await this.#request(`/zones/${zoneId}/email/routing`, emailRoutingSettingsSchema);
+    } catch (error) {
+      if (error instanceof CloudflareApiError && (error.status === 404 || error.status === 400)) {
+        return { enabled: false, status: 'disabled', domain: zoneName ?? null };
+      }
+      throw error;
+    }
+  }
+
+  async setEmailRoutingSettings(
+    zoneId: string,
+    enabled: boolean,
+  ): Promise<CloudflareEmailRoutingStatus> {
+    return this.#request(`/zones/${zoneId}/email/routing`, emailRoutingSettingsSchema, {
+      method: 'PUT',
+      body: JSON.stringify(enabled ? { enabled: true, skip_wizard: true } : { enabled: false }),
+    });
+  }
+
+  async listEmailRoutingRules(zoneId: string): Promise<CloudflareEmailRoutingRule[]> {
+    return this.#request(`/zones/${zoneId}/email/routing/rules`, z.array(emailRoutingRuleSchema));
+  }
+
+  async createEmailRoutingRule(
+    zoneId: string,
+    input: { matcherEmail: string; destinationEmail: string; enabled: boolean },
+  ): Promise<CloudflareEmailRoutingRule> {
+    return this.#request(`/zones/${zoneId}/email/routing/rules`, emailRoutingRuleSchema, {
+      method: 'POST',
+      body: JSON.stringify({
+        actions: [{ type: 'forward', value: [input.destinationEmail] }],
+        matchers: [{ type: 'literal', field: 'to', value: input.matcherEmail }],
+        enabled: input.enabled,
+      }),
+    });
+  }
+
+  async updateEmailRoutingRule(
+    zoneId: string,
+    ruleId: string,
+    enabled: boolean,
+  ): Promise<CloudflareEmailRoutingRule> {
+    const existing = await this.#request(
+      `/zones/${zoneId}/email/routing/rules/${encodeURIComponent(ruleId)}`,
+      z.object({
+        actions: z
+          .array(emailRoutingActionSchema)
+          .nullish()
+          .transform((value) => value ?? []),
+        matchers: z
+          .array(emailRoutingMatcherSchema)
+          .nullish()
+          .transform((value) => value ?? []),
+        enabled: z.boolean(),
+        name: z.string().nullish(),
+        priority: z.number().nullish(),
+      }),
+    );
+    return this.#request(
+      `/zones/${zoneId}/email/routing/rules/${encodeURIComponent(ruleId)}`,
+      emailRoutingRuleSchema,
+      {
+        method: 'PUT',
+        body: JSON.stringify({
+          actions: existing.actions,
+          matchers: existing.matchers,
+          enabled,
+          ...(existing.name === null ? {} : { name: existing.name }),
+          ...(existing.priority === null ? {} : { priority: existing.priority }),
+        }),
+      },
+    );
+  }
+
+  async deleteEmailRoutingRule(zoneId: string, ruleId: string): Promise<void> {
+    await this.#request(
+      `/zones/${zoneId}/email/routing/rules/${encodeURIComponent(ruleId)}`,
+      z.unknown(),
+      { method: 'DELETE' },
+    );
+  }
+
+  async getEmailRoutingCatchAll(zoneId: string): Promise<CloudflareEmailRoutingCatchAll | null> {
+    try {
+      return await this.#request(
+        `/zones/${zoneId}/email/routing/rules/catch_all`,
+        emailRoutingCatchAllSchema,
+      );
+    } catch (error) {
+      if (error instanceof CloudflareApiError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  async setEmailRoutingCatchAll(
+    zoneId: string,
+    enabled: boolean,
+    destinationEmail: string | null,
+  ): Promise<CloudflareEmailRoutingCatchAll> {
+    const existing = await this.getEmailRoutingCatchAll(zoneId);
+    if (!enabled && !existing) {
+      return { enabled: false, destinationEmail: null };
+    }
+    const forwardValue = enabled
+      ? (destinationEmail ?? existing?.destinationEmail ?? '')
+      : (existing?.destinationEmail ?? '');
+    if (enabled && !forwardValue) {
+      throw new Error('A destination address is required to enable the catch-all rule.');
+    }
+    return this.#request(
+      `/zones/${zoneId}/email/routing/rules/catch_all`,
+      emailRoutingCatchAllSchema,
+      {
+        method: 'PUT',
+        body: JSON.stringify({
+          enabled,
+          actions: forwardValue ? [{ type: 'forward', value: [forwardValue] }] : [],
+          matchers: [{ type: 'all' }],
+        }),
+      },
     );
   }
 
@@ -1443,4 +1594,77 @@ const workerDomainSchema = z
     zoneId: domain.zone_id,
     zoneName: domain.zone_name,
     certificateId: domain.cert_id ?? null,
+  }));
+
+const emailRoutingAddressSchema = z
+  .object({
+    id: z.string().nullish(),
+    tag: z.string().nullish(),
+    email: z.string(),
+    verified: z.string().nullish(),
+    created: z.string().nullish(),
+    modified: z.string().nullish(),
+  })
+  .transform((address): CloudflareEmailRoutingAddress => ({
+    id: address.id ?? address.tag ?? address.email,
+    email: address.email,
+    verified: address.verified !== null,
+    createdAt: address.created ?? null,
+  }));
+
+const emailRoutingActionSchema = z.object({
+  type: z.string(),
+  value: z.array(z.string()).nullish(),
+});
+
+const emailRoutingMatcherSchema = z.object({
+  type: z.string(),
+  field: z.string().nullish(),
+  value: z.string().nullish(),
+});
+
+const emailRoutingRuleSchema = z
+  .object({
+    id: z.string().nullish(),
+    tag: z.string().nullish(),
+    enabled: z.boolean(),
+    actions: z.array(emailRoutingActionSchema).nullish(),
+    matchers: z.array(emailRoutingMatcherSchema).nullish(),
+    name: z.string().nullish(),
+  })
+  .transform((rule): CloudflareEmailRoutingRule => {
+    const matcherEmail =
+      (rule.matchers ?? []).find((matcher) => matcher.field === 'to')?.value ?? '';
+    const destinationEmail =
+      (rule.actions ?? []).find((action) => action.type === 'forward')?.value?.[0] ?? '';
+    return {
+      id: rule.id ?? rule.tag ?? matcherEmail,
+      matcherEmail,
+      destinationEmail,
+      enabled: rule.enabled,
+      name: rule.name ?? null,
+    };
+  });
+
+const emailRoutingSettingsSchema = z
+  .object({
+    enabled: z.boolean(),
+    status: z.string().nullish(),
+    name: z.string().nullish(),
+  })
+  .transform((settings): CloudflareEmailRoutingStatus => ({
+    enabled: settings.enabled,
+    status: settings.status ?? (settings.enabled ? 'ready' : 'disabled'),
+    domain: settings.name ?? null,
+  }));
+
+const emailRoutingCatchAllSchema = z
+  .object({
+    enabled: z.boolean(),
+    actions: z.array(emailRoutingActionSchema).nullish(),
+  })
+  .transform((rule): CloudflareEmailRoutingCatchAll => ({
+    enabled: rule.enabled,
+    destinationEmail:
+      (rule.actions ?? []).find((action) => action.type === 'forward')?.value?.[0] ?? null,
   }));
