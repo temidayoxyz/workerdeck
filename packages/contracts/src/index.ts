@@ -40,6 +40,7 @@ export const projectSchema = z.object({
   repositoryName: z.string().max(100).nullable(),
   productionBranch: z.string().min(1).max(255),
   framework: frameworkSchema,
+  outputDirectory: z.string().max(255).nullable(),
   status: projectStatusSchema,
   createdAt: isoDateSchema,
   updatedAt: isoDateSchema,
@@ -104,6 +105,13 @@ export const dashboardSummarySchema = z.object({
     plan: z.enum(['free', 'paid', 'unknown']),
     connected: z.boolean(),
   }),
+  sync: z
+    .object({
+      status: z.enum(['ok', 'degraded', 'disconnected']),
+      message: z.string().max(500).nullable(),
+      checkedAt: isoDateSchema.nullable(),
+    })
+    .nullable(),
 });
 
 export const createProjectInputSchema = z
@@ -126,6 +134,16 @@ export const createProjectInputSchema = z
       .optional(),
     productionBranch: z.string().trim().min(1).max(255).default('main'),
     framework: frameworkSchema.default('unknown'),
+    outputDirectory: z
+      .string()
+      .trim()
+      .max(255)
+      .refine(
+        (value) => /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value) && !value.includes('..'),
+        'Output directory must use a safe relative path like "dist" or "out".',
+      )
+      .nullable()
+      .default(null),
     rootDirectory: z
       .string()
       .trim()
@@ -289,6 +307,14 @@ export const buildLogsSchema = z.object({
   cursor: z.string().nullable(),
   truncated: z.boolean(),
   lines: z.array(buildLogSchema),
+  diagnosis: z
+    .object({
+      code: z.string().min(1).max(64),
+      title: z.string().min(1).max(300),
+      remediation: z.string().min(1).max(1000),
+    })
+    .nullable()
+    .optional(),
 });
 
 export const workerAnalyticsPointSchema = z.object({

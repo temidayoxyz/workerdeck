@@ -73,6 +73,7 @@ export function NewProjectPage(): React.JSX.Element {
   const [projectSlug, setProjectSlug] = useState('');
   const [productionBranch, setProductionBranch] = useState('main');
   const [rootDirectory, setRootDirectory] = useState('/');
+  const [outputDirectory, setOutputDirectory] = useState('');
   const [buildCommand, setBuildCommand] = useState('npm run build');
   const [deployCommand, setDeployCommand] = useState('npx wrangler deploy');
   const inspectionRequest = useRef(0);
@@ -166,6 +167,7 @@ export function NewProjectPage(): React.JSX.Element {
       if (inspectionRequest.current !== requestId) return;
       setInspection(detected);
       setRootDirectory(detected.rootDirectory);
+      setOutputDirectory(detected.outputDirectory ?? '');
       setBuildCommand(detected.buildCommand);
       setDeployCommand(detected.deployCommand);
     } catch (reason) {
@@ -206,6 +208,7 @@ export function NewProjectPage(): React.JSX.Element {
       productionBranch: data.get('productionBranch'),
       framework: inspection?.framework ?? 'unknown',
       rootDirectory: data.get('rootDirectory'),
+      outputDirectory: (data.get('outputDirectory') as string | null) || null,
       buildCommand: data.get('buildCommand'),
       deployCommand: data.get('deployCommand'),
       ...(provider === 'github' && selectedRepository
@@ -560,7 +563,7 @@ export function NewProjectPage(): React.JSX.Element {
                 />
               </span>
             </label>
-            <div className="form-grid form-grid--three">
+            <div className="form-grid form-grid--four">
               <label className="field-label">
                 <span>Root directory</span>
                 <span className="field-control">
@@ -571,6 +574,18 @@ export function NewProjectPage(): React.JSX.Element {
                     required
                   />
                 </span>
+              </label>
+              <label className="field-label">
+                <span>Output directory</span>
+                <span className="field-control">
+                  <input
+                    name="outputDirectory"
+                    placeholder="dist"
+                    value={outputDirectory}
+                    onChange={(event) => setOutputDirectory(event.target.value)}
+                  />
+                </span>
+                <small>Static asset folder. Leave blank for the framework default.</small>
               </label>
               <label className="field-label">
                 <span>Build command</span>

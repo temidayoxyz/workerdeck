@@ -109,6 +109,7 @@ export async function createProject(input: CreateProjectInput): Promise<Project>
       repositoryName: repositoryParts[1]?.replace(/\.git$/, '') ?? null,
       productionBranch: input.productionBranch,
       framework: input.framework,
+      outputDirectory: input.outputDirectory,
       status: 'active',
       createdAt: now,
       updatedAt: now,

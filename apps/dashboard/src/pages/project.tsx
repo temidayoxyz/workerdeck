@@ -6,6 +6,7 @@ import type {
 } from '@workerdeck/contracts';
 import {
   Activity,
+  AlertCircle,
   ArrowRight,
   Boxes,
   Cloud,
@@ -624,6 +625,17 @@ export function ProjectLogsPage({
           </span>
         </div>
         {error ? <div className="inline-alert">{error}</div> : null}
+        {logs?.diagnosis ? (
+          <div className="build-diagnosis" role="status">
+            <span className="build-diagnosis-icon">
+              <AlertCircle size={18} />
+            </span>
+            <div>
+              <strong>{logs.diagnosis.title}</strong>
+              <p>{logs.diagnosis.remediation}</p>
+            </div>
+          </div>
+        ) : null}
         <div className="build-log-stream">
           {logs?.lines.map((line, index) => (
             <div key={`${line.timestamp ?? 'line'}-${index}`}>

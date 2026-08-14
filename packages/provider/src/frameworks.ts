@@ -156,7 +156,10 @@ export function detectFramework(input: FrameworkDetectionInput): FrameworkDetect
     deployCommand: `${wrangler(manager)} deploy`,
     packageManager: manager,
     ready: false,
-    warnings: ['WorkerDeck could not identify a supported Cloudflare deployment shape.'],
+    warnings: [
+      'WorkerDeck could not identify a supported Cloudflare deployment shape.',
+      'Review the build and deploy commands below, and set the output directory for static sites before deploying.',
+    ],
   };
 }
 

@@ -3889,3 +3889,78 @@ select:focus-visible {
 .app-shell .deployment-history .rollback-button {
   font-size: 12px;
 }
+
+.form-grid--four {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* Provider sync status banner --------------------------------------------- */
+.sync-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px 16px;
+  color: var(--yellow);
+  background: var(--yellow-soft);
+  border: 1px solid rgb(240 180 41 / 22%);
+  border-radius: var(--radius);
+}
+.sync-alert--disconnected {
+  color: var(--red);
+  background: var(--red-soft);
+  border-color: rgb(255 98 98 / 22%);
+}
+.sync-alert > span {
+  min-width: 0;
+}
+.app-shell .sync-alert strong,
+.app-shell .sync-alert small {
+  display: block;
+}
+.app-shell .sync-alert strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+.app-shell .sync-alert small {
+  margin-top: 2px;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+/* Human-readable build failure diagnosis ----------------------------------- */
+.build-diagnosis {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  margin: 14px 18px 0;
+  padding: 13px;
+  color: var(--yellow);
+  background: var(--yellow-soft);
+  border: 1px solid rgb(240 180 41 / 22%);
+  border-radius: 7px;
+}
+.build-diagnosis-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  background: rgb(240 180 41 / 14%);
+  border-radius: 6px;
+}
+.build-diagnosis > div {
+  min-width: 0;
+}
+.app-shell .build-diagnosis strong,
+.app-shell .build-diagnosis p {
+  display: block;
+}
+.app-shell .build-diagnosis strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+.app-shell .build-diagnosis p {
+  margin-top: 4px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}

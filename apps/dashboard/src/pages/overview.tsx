@@ -1,5 +1,6 @@
 import type { DashboardSummary, Deployment, Environment, Project } from '@workerdeck/contracts';
 import {
+  AlertCircle,
   ArrowRight,
   Box,
   CloudCog,
@@ -82,6 +83,22 @@ export function OverviewPage({
           {summary.account.connected ? 'Cloudflare connected' : 'Cloudflare not connected'}
         </div>
       </section>
+
+      {summary.sync && summary.sync.status !== 'ok' ? (
+        <div className={`sync-alert sync-alert--${summary.sync.status}`} role="status">
+          <AlertCircle size={17} />
+          <span>
+            <strong>
+              {summary.sync.status === 'disconnected'
+                ? 'Cloudflare sync is paused'
+                : 'Some projects need attention'}
+            </strong>
+            <small>
+              {summary.sync.message ?? 'Build reconciliation reported a provider problem.'}
+            </small>
+          </span>
+        </div>
+      ) : null}
 
       <section className="metric-strip" aria-label="Account metrics">
         <div>

@@ -28,6 +28,7 @@ interface ProjectRow {
   repository_key: string | null;
   production_branch: string;
   framework: Project['framework'];
+  output_directory: string | null;
   status: Project['status'];
   created_at: string;
   updated_at: string;
@@ -60,6 +61,7 @@ export interface DeploymentTarget {
 export interface BuildSyncTarget {
   projectId: string;
   framework: Project['framework'];
+  outputDirectory: string | null;
   productionBranch: string;
   workerName: string;
   workerTag: string;
@@ -124,6 +126,7 @@ const toProject = (row: ProjectRow): Project => ({
   repositoryName: row.repository_name,
   productionBranch: row.production_branch,
   framework: row.framework,
+  outputDirectory: row.output_directory,
   status: row.status,
   createdAt: normalizeStorageTimestamp(row.created_at),
   updatedAt: normalizeStorageTimestamp(row.updated_at),
@@ -194,7 +197,7 @@ export class Repository {
   constructor(private readonly db: D1Database) {}
 
   async dashboard(account: DashboardSummary['account']): Promise<DashboardSummary> {
-    const [projects, environments, deployments, resourceCounts] = await Promise.all([
+    const [projects, environments, deployments, resourceCounts, health] = await Promise.all([
       this.db.prepare('SELECT * FROM projects ORDER BY updated_at DESC LIMIT 50').all<ProjectRow>(),
       this.db
         .prepare('SELECT * FROM environments ORDER BY updated_at DESC LIMIT 100')
@@ -207,6 +210,7 @@ export class Repository {
           'SELECT kind, COUNT(*) AS count FROM managed_resources WHERE deleted_at IS NULL GROUP BY kind',
         )
         .all<{ kind: ResourceKind; count: number }>(),
+      this.buildSyncHealth(),
     ]);
 
     const counts: DashboardSummary['resourceCounts'] = {
@@ -226,6 +230,13 @@ export class Repository {
       deployments: deployments.results.map(toDeployment),
       resourceCounts: counts,
       account,
+      sync: health
+        ? {
+            status: health.status,
+            message: health.message,
+            checkedAt: normalizeNullableStorageTimestamp(health.checkedAt),
+          }
+        : null,
     };
   }
 
@@ -607,8 +618,9 @@ export class Repository {
           .prepare(
             `INSERT INTO projects (
               id, slug, name, description, repository_url, repository_owner, repository_name,
-              production_branch, framework, repository_key, status, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+              production_branch, framework, output_directory, repository_key, status, created_at,
+              updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
           )
           .bind(
             projectId,
@@ -620,6 +632,7 @@ export class Repository {
             repository.name,
             input.productionBranch,
             input.framework,
+            input.outputDirectory ?? null,
             canonicalRepositoryKey(input.repositoryUrl),
             now,
             now,
@@ -880,6 +893,7 @@ export class Repository {
         `SELECT
           p.id AS project_id,
           p.framework,
+          p.output_directory,
           p.production_branch,
           production.worker_name,
           production.worker_tag,
@@ -900,6 +914,7 @@ export class Repository {
       .all<{
         project_id: string;
         framework: Project['framework'];
+        output_directory: string | null;
         production_branch: string;
         worker_name: string;
         worker_tag: string;
@@ -920,6 +935,7 @@ export class Repository {
     return result.results.map((row) => ({
       projectId: row.project_id,
       framework: row.framework,
+      outputDirectory: row.output_directory,
       productionBranch: row.production_branch,
       workerName: row.worker_name,
       workerTag: row.worker_tag,
@@ -933,11 +949,15 @@ export class Repository {
   async recordBuildSyncHealth(input: {
     checkedAt: string;
     targetCount: number;
+    status: 'ok' | 'degraded' | 'disconnected';
+    message: string | null;
     failures: Array<{ projectId: string; message: string }>;
   }): Promise<void> {
     const value = JSON.stringify({
       checkedAt: input.checkedAt,
       targetCount: input.targetCount,
+      status: input.status,
+      message: input.message,
       failureCount: input.failures.length,
       failures: input.failures,
     });
@@ -948,6 +968,43 @@ export class Repository {
       )
       .bind(value, input.checkedAt)
       .run();
+  }
+
+  async buildSyncHealth(): Promise<{
+    status: 'ok' | 'degraded' | 'disconnected';
+    message: string | null;
+    checkedAt: string;
+    targetCount: number;
+    failureCount: number;
+  } | null> {
+    const row = await this.db
+      .prepare("SELECT value FROM settings WHERE key = 'build_sync_health'")
+      .first<{ value: string }>();
+    if (!row) return null;
+    try {
+      const parsed = JSON.parse(row.value) as {
+        status: 'ok' | 'degraded' | 'disconnected';
+        message: string | null;
+        checkedAt: string;
+        targetCount: number;
+        failureCount: number;
+      };
+      if (
+        !['ok', 'degraded', 'disconnected'].includes(parsed.status) ||
+        typeof parsed.checkedAt !== 'string'
+      ) {
+        return null;
+      }
+      return {
+        status: parsed.status,
+        message: typeof parsed.message === 'string' ? parsed.message : null,
+        checkedAt: parsed.checkedAt,
+        targetCount: Number(parsed.targetCount) || 0,
+        failureCount: Number(parsed.failureCount) || 0,
+      };
+    } catch {
+      return null;
+    }
   }
 
   async latestDeploymentForEnvironment(environmentId: string): Promise<Deployment | null> {

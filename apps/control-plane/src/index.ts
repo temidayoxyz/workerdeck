@@ -20,6 +20,7 @@ import {
   managedDeployCommand,
   workerNameBuildVariable,
 } from './build-commands';
+import { diagnoseBuildFailure } from './build-diagnostics';
 import { AppError } from './errors';
 import { GitHubAppClient } from './github';
 import { Repository } from './repository';
@@ -671,11 +672,13 @@ app.post('/api/v1/projects', async (context) => {
       parsed.data.deployCommand,
       false,
       parsed.data.framework,
+      parsed.data.outputDirectory,
     );
     const previewDeployCommand = managedDeployCommand(
       parsed.data.deployCommand,
       true,
       parsed.data.framework,
+      parsed.data.outputDirectory,
     );
     try {
       const worker = await client.bootstrapWorker(workerName, '2026-08-12');
@@ -1073,8 +1076,12 @@ app.get('/api/v1/deployments/:deploymentId/logs', async (context) => {
     deployment.buildId,
     context.req.query('cursor'),
   );
+  const diagnosis =
+    deployment.status === 'failed'
+      ? diagnoseBuildFailure(logs.lines.map((line) => line.message))
+      : null;
   return context.json({
-    data: { buildId: deployment.buildId, ...logs },
+    data: { buildId: deployment.buildId, ...logs, diagnosis },
     requestId: context.get('requestId'),
   });
 });
@@ -1320,8 +1327,18 @@ export default {
 } satisfies ExportedHandler<AppEnv['Bindings']>;
 
 async function syncProviderBuilds(env: AppEnv['Bindings']): Promise<void> {
-  if (!env.CLOUDFLARE_API_TOKEN || !env.CLOUDFLARE_ACCOUNT_ID) return;
   const repository = new Repository(env.DB);
+  if (!env.CLOUDFLARE_API_TOKEN || !env.CLOUDFLARE_ACCOUNT_ID) {
+    await repository.recordBuildSyncHealth({
+      checkedAt: new Date().toISOString(),
+      targetCount: 0,
+      status: 'disconnected',
+      message:
+        'Cloudflare credentials are not configured, so build reconciliation is paused. Store the control-plane API token and account ID to resume.',
+      failures: [],
+    });
+    return;
+  }
   const targets = await repository.nextBuildSyncTargets();
   const client = new CloudflareClient({
     token: env.CLOUDFLARE_API_TOKEN,
@@ -1348,8 +1365,18 @@ async function syncProviderBuilds(env: AppEnv['Bindings']): Promise<void> {
             trigger.branchIncludes.includes('*') &&
             trigger.branchExcludes.includes(target.productionBranch);
           const deployCommand = trigger.deployCommand
-            ? managedDeployCommand(trigger.deployCommand, isPreview, target.framework)
-            : managedDeployCommand('npx wrangler deploy', isPreview, target.framework);
+            ? managedDeployCommand(
+                trigger.deployCommand,
+                isPreview,
+                target.framework,
+                target.outputDirectory,
+              )
+            : managedDeployCommand(
+                'npx wrangler deploy',
+                isPreview,
+                target.framework,
+                target.outputDirectory,
+              );
           const buildCommand = managedBuildCommand(
             trigger.buildCommand ?? 'npm run build',
             target.framework,
@@ -1454,6 +1481,11 @@ async function syncProviderBuilds(env: AppEnv['Bindings']): Promise<void> {
   await repository.recordBuildSyncHealth({
     checkedAt: new Date().toISOString(),
     targetCount: targets.length,
+    status: failures.length === 0 ? 'ok' : 'degraded',
+    message:
+      failures.length === 0
+        ? null
+        : `${failures.length} project build(s) could not be reconciled with Cloudflare.`,
     failures,
   });
 }

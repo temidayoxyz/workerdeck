@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  managedCompatibilityDate,
   managedBuildCommand,
   managedDeployCommand,
   workerNameBuildVariable,
@@ -14,13 +13,17 @@ describe('managedDeployCommand', () => {
   });
 
   it('preserves static asset arguments while removing protected flags', () => {
-    expect(
-      managedDeployCommand(
-        'npx wrangler deploy --assets dist --name=workerdeck-site --yes',
-        false,
-        'static',
-      ),
-    ).toBe(`npx wrangler deploy --assets dist --compatibility-date ${managedCompatibilityDate}`);
+    const managed = managedDeployCommand(
+      'npx wrangler deploy --assets dist --name=workerdeck-site --yes',
+      false,
+      'static',
+    );
+    expect(managed).toContain('workerdeck.assets.jsonc');
+    expect(managed).toContain("directory:'dist'");
+    expect(managed).toContain('single-page-application');
+    expect(managed).not.toContain('--name');
+    expect(managed).not.toContain('--yes');
+    expect(managed).not.toContain('--assets');
   });
 
   it('turns a production Wrangler command into a non-promoting preview upload', () => {
@@ -48,10 +51,16 @@ describe('managedDeployCommand', () => {
 describe('managedBuildCommand', () => {
   it('builds a Vite project without mutating its repository configuration', () => {
     expect(managedBuildCommand('npm run build', 'vite')).toBe(
-      'npm run build -- --configLoader runner',
+      'npm run build -- --configLoader runner --base /',
     );
     expect(managedBuildCommand('npx wrangler setup --yes && npm run build', 'vite')).toBe(
-      'npm run build -- --configLoader runner',
+      'npm run build -- --configLoader runner --base /',
+    );
+  });
+
+  it('keeps a Vite project base path when the command already pins one', () => {
+    expect(managedBuildCommand('npm run build -- --base /docs', 'vite')).toBe(
+      'npm run build -- --base /docs --configLoader runner',
     );
   });
 
@@ -73,22 +82,20 @@ describe('managedBuildCommand', () => {
 });
 
 describe('managed Vite deployment', () => {
-  it('deploys Vite output as static Worker assets without generated config', () => {
-    expect(managedDeployCommand('npx wrangler deploy', false, 'vite')).toBe(
-      `npx wrangler deploy --assets dist --compatibility-date ${managedCompatibilityDate}`,
-    );
-    expect(managedDeployCommand('npx wrangler deploy', true, 'vite')).toBe(
-      `npx wrangler versions upload --assets dist --compatibility-date ${managedCompatibilityDate}`,
-    );
+  it('deploys Vite output as an SPA-fallback assets-only Worker', () => {
+    const production = managedDeployCommand('npx wrangler deploy', false, 'vite');
+    expect(production).toContain("directory:'dist'");
+    expect(production).toContain("not_found_handling:'single-page-application'");
+    expect(production).toContain('wrangler deploy --config workerdeck.assets.jsonc');
+
+    const preview = managedDeployCommand('npx wrangler deploy', true, 'vite');
+    expect(preview).toContain('wrangler versions upload --config workerdeck.assets.jsonc');
   });
 
-  it('preserves an explicit compatibility date', () => {
-    expect(
-      managedDeployCommand(
-        'npx wrangler deploy --assets dist --compatibility-date 2025-04-01',
-        false,
-        'vite',
-      ),
-    ).toBe('npx wrangler deploy --assets dist --compatibility-date 2025-04-01');
+  it('honors a per-project output directory override', () => {
+    expect(managedDeployCommand('npx wrangler deploy', false, 'vite', 'out/web')).toContain(
+      "directory:'out/web'",
+    );
+    expect(managedDeployCommand('npx wrangler deploy', false, 'static')).toContain("directory:'.'");
   });
 });

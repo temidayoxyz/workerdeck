@@ -15,10 +15,27 @@ export function managedBuildCommand(command: string, framework: ManagedFramework
   const nonMutating = command
     .replace(/(?:^|&&)\s*npx\s+wrangler\s+setup\s+--yes\s*&&\s*/g, '')
     .trim();
-  if (framework === 'vite' && !/--configLoader\s+(?:runner|native)/.test(nonMutating)) {
-    return `${nonMutating} -- --configLoader runner`;
+  if (framework === 'vite') {
+    const args = [
+      /--configLoader\s+(?:runner|native)/.test(nonMutating) ? '' : '--configLoader runner',
+      /\s--base(?:=|\s)/.test(nonMutating) ? '' : '--base /',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    if (!args) return nonMutating;
+    return /(?:^|\s)--(?:\s|$)/.test(nonMutating)
+      ? `${nonMutating} ${args}`
+      : `${nonMutating} -- ${args}`;
   }
   return nonMutating;
+}
+
+function assetsConfigSetup(directory: string): string {
+  return (
+    `node -e "require('node:fs').writeFileSync('workerdeck.assets.jsonc',` +
+    `JSON.stringify({assets:{directory:'${directory}',not_found_handling:'single-page-application'},` +
+    `compatibility_date:'${managedCompatibilityDate}'}))"`
+  );
 }
 
 /**
@@ -30,6 +47,7 @@ export function managedDeployCommand(
   command: string,
   preview: boolean,
   framework: ManagedFramework = 'unknown',
+  outputDirectory?: string | null,
 ): string {
   if (framework === 'next') {
     return `npx opennextjs-cloudflare ${preview ? 'upload' : 'deploy'}`;
@@ -45,10 +63,19 @@ export function managedDeployCommand(
     .replace(/\s+/g, ' ')
     .trim();
   if (framework === 'vite' || framework === 'static') {
-    const assets = /\s--assets(?:=|\s)/.test(managed) ? managed : `${managed} --assets dist`;
-    return /\s--compatibility-date(?:=|\s)/.test(assets)
-      ? assets
-      : `${assets} --compatibility-date ${managedCompatibilityDate}`;
+    const assetsMatch = managed.match(/(?:^|\s)--assets(?:=|\s+)(?:"([^"]*)"|'([^']*)'|(\S+))/);
+    const directory =
+      outputDirectory?.trim() ||
+      assetsMatch?.[1] ||
+      assetsMatch?.[2] ||
+      assetsMatch?.[3] ||
+      (framework === 'static' ? '.' : 'dist');
+    const withoutAssets = managed
+      .replace(/\s+--assets(?:=|\s+)(?:"[^"]*"|'[^']*'|\S+)/g, '')
+      .replace(/\s+--compatibility-date(?:=|\s+)(?:"[^"]*"|'[^']*'|\S+)/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return `${assetsConfigSetup(directory)} && ${withoutAssets} --config workerdeck.assets.jsonc`;
   }
   return managed;
 }
