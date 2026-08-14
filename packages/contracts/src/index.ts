@@ -46,7 +46,13 @@ export const resourceKindSchema = z.enum([
   'domain',
   'queue',
   'workflow',
+  'hyperdrive',
+  'vectorize',
+  'ai_gateway',
+  'durable_object',
 ]);
+
+export const resourceStatusSchema = z.enum(['active', 'detaching', 'adopted']);
 
 export const projectSchema = z.object({
   id: z.uuid(),
@@ -100,6 +106,7 @@ export const managedResourceSchema = z.object({
   cloudflareId: z.string().min(1).max(255),
   name: z.string().min(1).max(255),
   ownershipTag: z.string().min(1).max(255),
+  status: resourceStatusSchema,
   createdAt: isoDateSchema,
   deletedAt: isoDateSchema.nullable(),
 });
@@ -125,6 +132,8 @@ export const dashboardSummarySchema = z.object({
       environmentKind: environmentKindSchema.nullable(),
       certificateId: z.string().nullable(),
       source: z.enum(['managed', 'synced']),
+      status: resourceStatusSchema,
+      providerError: z.string().max(1000).nullable(),
     }),
   ),
   resourceCounts: z.record(resourceKindSchema, z.number().int().nonnegative()),
@@ -217,12 +226,84 @@ export const createDeploymentInputSchema = z.object({
   commitSha: z.string().trim().min(7).max(64).optional(),
 });
 
-export const createResourceInputSchema = z.object({
+const namedResourceInputSchema = z.object({
   projectId: z.uuid(),
   environmentId: z.uuid(),
-  kind: z.enum(['d1', 'kv', 'r2']),
+  kind: z.enum(['d1', 'kv', 'r2', 'queue']),
   name: identifierSchema,
 });
+
+const hyperdriveResourceInputSchema = z.object({
+  projectId: z.uuid(),
+  environmentId: z.uuid(),
+  kind: z.literal('hyperdrive'),
+  name: identifierSchema,
+  origin: z.object({
+    database: z.string().trim().min(1).max(255),
+    host: z.string().trim().min(1).max(255),
+    port: z.number().int().min(1).max(65535),
+    scheme: z.enum(['postgres', 'postgresql', 'mysql']),
+    user: z.string().trim().min(1).max(255),
+    password: z.string().min(1).max(1024),
+  }),
+});
+
+const vectorizeResourceInputSchema = z.object({
+  projectId: z.uuid(),
+  environmentId: z.uuid(),
+  kind: z.literal('vectorize'),
+  name: identifierSchema,
+  dimensions: z.number().int().min(1).max(1536),
+  metric: z.enum(['cosine', 'euclidean', 'dotproduct']),
+});
+
+const aiGatewayResourceInputSchema = z.object({
+  projectId: z.uuid(),
+  environmentId: z.uuid(),
+  kind: z.literal('ai_gateway'),
+  name: identifierSchema,
+  cacheTtl: z.number().int().min(0).max(86_400).default(0),
+  collectLogs: z.boolean().default(true),
+});
+
+const workflowResourceInputSchema = z.object({
+  projectId: z.uuid(),
+  environmentId: z.uuid(),
+  kind: z.literal('workflow'),
+  name: identifierSchema,
+  className: z
+    .string()
+    .trim()
+    .min(1)
+    .max(255)
+    .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'Use a valid class identifier.'),
+  scriptName: z
+    .string()
+    .trim()
+    .min(1)
+    .max(255)
+    .regex(
+      /^[A-Za-z0-9][A-Za-z0-9._/-]*$/,
+      'Use letters, numbers, dots, slashes, and hyphens for the Worker script name.',
+    ),
+});
+
+const durableObjectResourceInputSchema = z.object({
+  projectId: z.uuid(),
+  environmentId: z.uuid(),
+  kind: z.literal('durable_object'),
+  name: z.string().trim().min(1).max(255),
+  cloudflareId: z.string().min(1).max(255),
+});
+
+export const createResourceInputSchema = z.discriminatedUnion('kind', [
+  namedResourceInputSchema,
+  hyperdriveResourceInputSchema,
+  vectorizeResourceInputSchema,
+  aiGatewayResourceInputSchema,
+  workflowResourceInputSchema,
+  durableObjectResourceInputSchema,
+]);
 
 export const domainSchema = z.object({
   id: z.string().min(1).max(255),
@@ -491,6 +572,7 @@ export type UsageSummary = z.infer<typeof usageSummarySchema>;
 export type DeploymentStage = z.infer<typeof deploymentStageSchema>;
 export type Framework = z.infer<typeof frameworkSchema>;
 export type ResourceKind = z.infer<typeof resourceKindSchema>;
+export type ResourceStatus = z.infer<typeof resourceStatusSchema>;
 
 export interface ApiSuccess<T> {
   data: T;

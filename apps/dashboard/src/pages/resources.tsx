@@ -2,11 +2,15 @@ import type { DashboardSummary, ManagedResource, ResourceKind } from '@workerdec
 import {
   Archive,
   Box,
+  Boxes,
   CloudCog,
   Database,
   ExternalLink,
+  HardDrive,
   Network,
   Plus,
+  Search,
+  Sparkles,
   Workflow,
 } from '../components/icon';
 import { useState } from 'react';
@@ -49,6 +53,30 @@ const resources: Array<{
     label: 'Workflows',
     description: 'Durable deployment operations',
     icon: Workflow,
+  },
+  {
+    kind: 'hyperdrive',
+    label: 'Hyperdrive',
+    description: 'Postgres bridge with connection pooling',
+    icon: HardDrive,
+  },
+  {
+    kind: 'vectorize',
+    label: 'Vectorize indexes',
+    description: 'Embeddings and semantic search',
+    icon: Search,
+  },
+  {
+    kind: 'ai_gateway',
+    label: 'Workers AI / AI Gateway',
+    description: 'Model access with caching and logs',
+    icon: Sparkles,
+  },
+  {
+    kind: 'durable_object',
+    label: 'Durable Objects',
+    description: 'Adopted stateful object namespaces',
+    icon: Boxes,
   },
 ];
 

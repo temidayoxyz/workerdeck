@@ -204,9 +204,10 @@ export async function createResource(input: CreateResourceInput): Promise<Manage
       projectId: input.projectId,
       environmentId: input.environmentId,
       kind: input.kind,
-      cloudflareId: crypto.randomUUID(),
+      cloudflareId: input.kind === 'durable_object' ? input.cloudflareId : crypto.randomUUID(),
       name: input.name,
       ownershipTag: `workerdeck:${input.projectId}:${input.environmentId}:${input.kind}:demo`,
+      status: input.kind === 'durable_object' ? 'adopted' : 'active',
       createdAt: new Date().toISOString(),
       deletedAt: null,
     });
@@ -236,6 +237,7 @@ export async function getManagedResources(): Promise<ManagedResource[]> {
         cloudflareId: 'database-demo',
         name: 'checkout-db',
         ownershipTag: 'workerdeck:demo:d1',
+        status: 'active',
         createdAt: new Date().toISOString(),
         deletedAt: null,
       },
@@ -247,6 +249,7 @@ export async function getManagedResources(): Promise<ManagedResource[]> {
         cloudflareId: 'kv-demo',
         name: 'session-cache',
         ownershipTag: 'workerdeck:demo:kv',
+        status: 'active',
         createdAt: new Date().toISOString(),
         deletedAt: null,
       },
@@ -255,6 +258,40 @@ export async function getManagedResources(): Promise<ManagedResource[]> {
   return request('/api/v1/resources', { method: 'GET' }, (value) => {
     const envelope = value as ApiSuccess<unknown>;
     return managedResourceSchema.array().parse(envelope.data);
+  });
+}
+
+export async function getDurableObjectNamespaces(): Promise<
+  Array<{ id: string; name: string; className: string; scriptName: string }>
+> {
+  if (isDemoMode()) {
+    return Promise.resolve([
+      {
+        id: 'namespace-demo-1',
+        name: 'checkout-sessions',
+        className: 'CheckoutSession',
+        scriptName: 'workerdeck-checkout-api',
+      },
+      {
+        id: 'namespace-demo-2',
+        name: 'rate-limits',
+        className: 'RateLimiter',
+        scriptName: 'workerdeck-checkout-api',
+      },
+    ]);
+  }
+  return request('/api/v1/cloudflare/durable-objects/namespaces', { method: 'GET' }, (value) => {
+    const envelope = value as ApiSuccess<unknown>;
+    return z
+      .array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          className: z.string(),
+          scriptName: z.string(),
+        }),
+      )
+      .parse(envelope.data);
   });
 }
 

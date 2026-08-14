@@ -9,11 +9,17 @@ import {
   setTrafficInputSchema,
   repositoryInspectionSchema,
   upsertEnvironmentVariableInputSchema,
+  type CreateResourceInput,
   type DashboardSummary,
   type RecoveryResource,
+  type ResourceKind,
   type WorkerAnalytics,
 } from '@workerdeck/contracts';
-import { CloudflareApiError, CloudflareClient } from '@workerdeck/provider';
+import {
+  CloudflareApiError,
+  CloudflareClient,
+  type ProvisionedResource,
+} from '@workerdeck/provider';
 import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { z } from 'zod';
@@ -83,7 +89,20 @@ app.delete('/api/v1/projects/:projectId', async (context) => {
   }
   if (
     plan.resources.some(
-      (resource) => !['worker', 'd1', 'kv', 'r2', 'domain'].includes(resource.kind),
+      (resource) =>
+        ![
+          'worker',
+          'd1',
+          'kv',
+          'r2',
+          'domain',
+          'queue',
+          'workflow',
+          'hyperdrive',
+          'vectorize',
+          'ai_gateway',
+          'durable_object',
+        ].includes(resource.kind),
     )
   ) {
     throw new AppError(
@@ -101,7 +120,11 @@ app.delete('/api/v1/projects/:projectId', async (context) => {
   try {
     const client = cloudflareClient(context);
     const domains = plan.resources.filter((resource) => resource.kind === 'domain');
-    const storage = plan.resources.filter((resource) => ['d1', 'kv', 'r2'].includes(resource.kind));
+    const storage = plan.resources.filter((resource) =>
+      ['d1', 'kv', 'r2', 'queue', 'workflow', 'hyperdrive', 'vectorize', 'ai_gateway'].includes(
+        resource.kind,
+      ),
+    );
     const providerSteps: Array<{ label: string; run: () => Promise<void> }> = [
       ...domains.map((resource) => ({
         label: `domain:${resource.name}`,
@@ -117,11 +140,10 @@ app.delete('/api/v1/projects/:projectId', async (context) => {
       ...storage.map((resource) => ({
         label: `${resource.kind}:${resource.name}`,
         run: () =>
-          resource.kind === 'd1'
-            ? client.deleteD1Database(resource.cloudflareId)
-            : resource.kind === 'kv'
-              ? client.deleteKvNamespace(resource.cloudflareId)
-              : client.deleteR2Bucket(resource.name),
+          deleteProvisionedResource(client, resource.kind, {
+            id: resource.cloudflareId,
+            name: resource.name,
+          }),
       })),
     ];
     const deleted: string[] = [];
@@ -352,8 +374,31 @@ app.delete(
     if (!domain) {
       throw new AppError(404, 'DOMAIN_NOT_FOUND', 'This domain is not attached to the Worker.');
     }
-    await cloudflareClient(context).detachWorkerDomain(domain.id);
-    await repository.removeDomainRecord(domain.id, target.environmentId);
+    const client = cloudflareClient(context);
+    try {
+      await client.detachWorkerDomain(domain.id);
+    } catch (error) {
+      if (error instanceof CloudflareApiError) {
+        await repository.markDomainDetaching(domain.id, {
+          status: error.status,
+          message: error.message,
+        });
+        throw new AppError(
+          502,
+          'DOMAIN_DETACH_PENDING',
+          `Cloudflare could not detach ${domain.hostname} yet: ${error.message}. WorkerDeck kept the domain in a detaching state and will retry automatically.`,
+          {
+            providerStatus: error.status,
+            cloudflareErrors: error.errors.map((item) => ({
+              code: item.code,
+              message: item.message,
+            })),
+          },
+        );
+      }
+      throw error;
+    }
+    await repository.removeDomainRecord(domain.id);
     return context.json({ data: { deleted: true }, requestId: context.get('requestId') });
   },
 );
@@ -527,14 +572,11 @@ app.post('/api/v1/resources', async (context) => {
   }
   await repository.reserveIdempotencyKey(idempotencyKey, context.get('actor'), requestHash);
   const client = cloudflareClient(context);
-  let provisioned;
+  let provisioned: ProvisionedResource | null = null;
+  let configuration: Record<string, unknown> = {};
+  let status: 'active' | 'adopted' = 'active';
   try {
-    provisioned =
-      parsed.data.kind === 'd1'
-        ? await client.createD1Database(parsed.data.name)
-        : parsed.data.kind === 'kv'
-          ? await client.createKvNamespace(parsed.data.name)
-          : await client.createR2Bucket(parsed.data.name);
+    ({ provisioned, configuration, status } = await provisionResource(client, parsed.data));
   } catch (error) {
     await repository.removeIdempotencyKey(idempotencyKey);
     throw error;
@@ -542,9 +584,13 @@ app.post('/api/v1/resources', async (context) => {
 
   try {
     const resource = await repository.recordManagedResource({
-      ...parsed.data,
+      projectId: parsed.data.projectId,
+      environmentId: parsed.data.environmentId,
+      kind: parsed.data.kind,
       cloudflareId: provisioned.id,
       name: provisioned.name,
+      configuration,
+      status,
       actor: context.get('actor'),
       requestId: context.get('requestId'),
     });
@@ -556,22 +602,24 @@ app.post('/api/v1/resources', async (context) => {
     );
     return context.json({ data: resource, requestId: context.get('requestId') }, 201);
   } catch (error) {
-    try {
-      if (parsed.data.kind === 'd1') await client.deleteD1Database(provisioned.id);
-      else if (parsed.data.kind === 'kv') await client.deleteKvNamespace(provisioned.id);
-      else await client.deleteR2Bucket(provisioned.name);
-    } catch (compensationError) {
-      console.error(
-        JSON.stringify({
-          level: 'error',
-          requestId: context.get('requestId'),
-          message: 'Resource compensation failed.',
-          resourceKind: parsed.data.kind,
-          resourceId: provisioned.id,
-          cause:
-            compensationError instanceof Error ? compensationError.name : 'UNKNOWN_PROVIDER_ERROR',
-        }),
-      );
+    if (status === 'active') {
+      try {
+        await deleteProvisionedResource(client, parsed.data.kind, provisioned);
+      } catch (compensationError) {
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            requestId: context.get('requestId'),
+            message: 'Resource compensation failed.',
+            resourceKind: parsed.data.kind,
+            resourceId: provisioned.id,
+            cause:
+              compensationError instanceof Error
+                ? compensationError.name
+                : 'UNKNOWN_PROVIDER_ERROR',
+          }),
+        );
+      }
     }
     await repository.removeIdempotencyKey(idempotencyKey);
     throw error;
@@ -1381,6 +1429,11 @@ app.put('/api/v1/projects/:projectId/environments/:environmentId/cron', async (c
   return context.json({ data: schedules, requestId: context.get('requestId') });
 });
 
+app.get('/api/v1/cloudflare/durable-objects/namespaces', async (context) => {
+  const namespaces = await cloudflareClient(context).listDurableObjectNamespaces();
+  return context.json({ data: namespaces, requestId: context.get('requestId') });
+});
+
 app.get('/api/v1/cloudflare/connection', async (context) => {
   const token = context.env.CLOUDFLARE_API_TOKEN;
   if (!token) {
@@ -1431,7 +1484,14 @@ app.onError((error, context) => {
             'CLOUDFLARE_API_ERROR',
             providerError.status === 403
               ? 'Cloudflare rejected the configured API token or its permissions.'
-              : 'Cloudflare could not complete the requested operation.',
+              : `Cloudflare could not complete the requested operation: ${providerError.message}`,
+            {
+              providerStatus: providerError.status,
+              cloudflareErrors: providerError.errors.map((item) => ({
+                code: item.code,
+                message: item.message,
+              })),
+            },
           )
         : null;
   const status = appError?.status ?? 500;
@@ -1623,6 +1683,7 @@ async function syncProviderBuilds(env: AppEnv['Bindings']): Promise<void> {
     );
     return [{ projectId: target.projectId, message }];
   });
+  await retryDetachingDomains(repository, client);
   await repository.recordBuildSyncHealth({
     checkedAt: new Date().toISOString(),
     targetCount: targets.length,
@@ -1633,6 +1694,42 @@ async function syncProviderBuilds(env: AppEnv['Bindings']): Promise<void> {
         : `${failures.length} project${failures.length === 1 ? '' : 's'} could not be reconciled with Cloudflare.`,
     failures,
   });
+}
+
+async function retryDetachingDomains(
+  repository: Repository,
+  client: CloudflareClient,
+): Promise<void> {
+  const detaching = await repository.listDetachingDomains();
+  await Promise.all(
+    detaching.map(async (domain) => {
+      try {
+        await client.detachWorkerDomain(domain.cloudflareId);
+        await repository.removeDomainRecordById(domain.id);
+      } catch (error) {
+        if (error instanceof CloudflareApiError) {
+          if (error.status === 404) {
+            await repository.removeDomainRecordById(domain.id);
+            return;
+          }
+          await repository.updateDomainDetachError(domain.id, {
+            status: error.status,
+            message: error.message,
+          });
+          return;
+        }
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            event: 'domain_detach_retry_failed',
+            resourceId: domain.id,
+            cloudflareId: domain.cloudflareId,
+            cause: error instanceof Error ? error.name : 'UNKNOWN_ERROR',
+          }),
+        );
+      }
+    }),
+  );
 }
 
 async function retryFailedProductionBuild(
@@ -1705,6 +1802,143 @@ async function ignoreCloudflareNotFound(operation: () => Promise<void>): Promise
   } catch (error) {
     if (error instanceof CloudflareApiError && error.status === 404) return;
     throw error;
+  }
+}
+
+async function provisionResource(
+  client: CloudflareClient,
+  input: CreateResourceInput,
+): Promise<{
+  provisioned: ProvisionedResource;
+  configuration: Record<string, unknown>;
+  status: 'active' | 'adopted';
+}> {
+  switch (input.kind) {
+    case 'd1':
+      return {
+        provisioned: await client.createD1Database(input.name),
+        configuration: {},
+        status: 'active',
+      };
+    case 'kv':
+      return {
+        provisioned: await client.createKvNamespace(input.name),
+        configuration: {},
+        status: 'active',
+      };
+    case 'r2':
+      return {
+        provisioned: await client.createR2Bucket(input.name),
+        configuration: {},
+        status: 'active',
+      };
+    case 'queue':
+      return {
+        provisioned: await client.createQueue(input.name),
+        configuration: {},
+        status: 'active',
+      };
+    case 'hyperdrive':
+      return {
+        provisioned: await client.createHyperdrive(input.name, input.origin),
+        configuration: {
+          origin: {
+            database: input.origin.database,
+            host: input.origin.host,
+            port: input.origin.port,
+            scheme: input.origin.scheme,
+            user: input.origin.user,
+          },
+        },
+        status: 'active',
+      };
+    case 'vectorize':
+      return {
+        provisioned: await client.createVectorizeIndex(input.name, {
+          dimensions: input.dimensions,
+          metric: input.metric,
+        }),
+        configuration: { dimensions: input.dimensions, metric: input.metric },
+        status: 'active',
+      };
+    case 'ai_gateway':
+      return {
+        provisioned: await client.createAiGateway({
+          id: input.name,
+          cacheTtl: input.cacheTtl,
+          collectLogs: input.collectLogs,
+        }),
+        configuration: { cacheTtl: input.cacheTtl, collectLogs: input.collectLogs },
+        status: 'active',
+      };
+    case 'workflow':
+      return {
+        provisioned: await client.createWorkflow({
+          name: input.name,
+          className: input.className,
+          scriptName: input.scriptName,
+        }),
+        configuration: { className: input.className, scriptName: input.scriptName },
+        status: 'active',
+      };
+    case 'durable_object': {
+      const namespaces = await client.listDurableObjectNamespaces();
+      const namespace = namespaces.find((candidate) => candidate.id === input.cloudflareId);
+      if (!namespace) {
+        throw new AppError(
+          404,
+          'DURABLE_OBJECT_NOT_FOUND',
+          'That Durable Object namespace does not exist in this Cloudflare account.',
+        );
+      }
+      return {
+        provisioned: { id: namespace.id, name: namespace.name },
+        configuration: {
+          className: namespace.className,
+          scriptName: namespace.scriptName,
+          source: 'adopted',
+        },
+        status: 'adopted',
+      };
+    }
+  }
+}
+
+async function deleteProvisionedResource(
+  client: CloudflareClient,
+  kind: ResourceKind,
+  resource: ProvisionedResource,
+): Promise<void> {
+  switch (kind) {
+    case 'd1':
+      await client.deleteD1Database(resource.id);
+      return;
+    case 'kv':
+      await client.deleteKvNamespace(resource.id);
+      return;
+    case 'r2':
+      await client.deleteR2Bucket(resource.name);
+      return;
+    case 'queue':
+      await client.deleteQueue(resource.id);
+      return;
+    case 'hyperdrive':
+      await client.deleteHyperdrive(resource.id);
+      return;
+    case 'vectorize':
+      await client.deleteVectorizeIndex(resource.name);
+      return;
+    case 'ai_gateway':
+      await client.deleteAiGateway(resource.id);
+      return;
+    case 'workflow':
+      await client.deleteWorkflow(resource.name);
+      return;
+    case 'durable_object':
+      return;
+    case 'worker':
+    case 'domain':
+      throw new Error(`Provider deletion for ${kind} resources must be dispatched explicitly.`);
   }
 }
 

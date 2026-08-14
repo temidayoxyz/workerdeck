@@ -260,6 +260,87 @@ describe('CloudflareClient', () => {
     ]);
   });
 
+  it('creates Hyperdrive, Vectorize, AI Gateway, Queue, and Workflow resources', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(response({ id: 'hyperdrive-id', name: 'checkout-postgres' }))
+      .mockResolvedValueOnce(response({ name: 'product-embeddings' }))
+      .mockResolvedValueOnce(response({ id: 'model-gateway' }))
+      .mockResolvedValueOnce(response({ queue_id: 'queue-id', queue_name: 'order-events' }))
+      .mockResolvedValueOnce(response({ id: 'workflow-id', name: 'order-saga' }));
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(
+      client.createHyperdrive('checkout-postgres', {
+        database: 'checkout',
+        host: 'db.example.com',
+        password: 'do-not-store-me',
+        port: 5432,
+        scheme: 'postgres',
+        user: 'checkout_user',
+      }),
+    ).resolves.toEqual({ id: 'hyperdrive-id', name: 'checkout-postgres' });
+    await expect(
+      client.createVectorizeIndex('product-embeddings', {
+        dimensions: 1536,
+        metric: 'cosine',
+      }),
+    ).resolves.toEqual({ id: 'product-embeddings', name: 'product-embeddings' });
+    await expect(
+      client.createAiGateway({ id: 'model-gateway', cacheTtl: 300, collectLogs: true }),
+    ).resolves.toEqual({ id: 'model-gateway', name: 'model-gateway' });
+    await expect(client.createQueue('order-events')).resolves.toEqual({
+      id: 'queue-id',
+      name: 'order-events',
+    });
+    await expect(
+      client.createWorkflow({
+        name: 'order-saga',
+        className: 'OrderSaga',
+        scriptName: 'workerdeck-orders-api',
+      }),
+    ).resolves.toEqual({ id: 'workflow-id', name: 'order-saga' });
+
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      'https://api.cloudflare.com/client/v4/accounts/account/hyperdrive/configs',
+      'https://api.cloudflare.com/client/v4/accounts/account/vectorize/v2/indexes',
+      'https://api.cloudflare.com/client/v4/accounts/account/ai-gateway/gateways',
+      'https://api.cloudflare.com/client/v4/accounts/account/queues',
+      'https://api.cloudflare.com/client/v4/accounts/account/workflows/order-saga',
+    ]);
+    const hyperdriveBody = JSON.parse(fetcher.mock.calls[0]?.[1]?.body as string) as {
+      origin: { password: string };
+    };
+    expect(hyperdriveBody.origin.password).toBe('do-not-store-me');
+  });
+
+  it('maps Durable Object namespaces into adoption candidates', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      response([
+        {
+          id: 'namespace-id',
+          name: 'checkout-sessions',
+          class: 'CheckoutSession',
+          script: 'workerdeck-checkout-api',
+          use_sqlite: true,
+        },
+      ]),
+    );
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(client.listDurableObjectNamespaces()).resolves.toEqual([
+      {
+        id: 'namespace-id',
+        name: 'checkout-sessions',
+        className: 'CheckoutSession',
+        scriptName: 'workerdeck-checkout-api',
+      },
+    ]);
+    expect(fetcher.mock.calls[0]?.[0]).toContain(
+      '/accounts/account/workers/durable_objects/namespaces',
+    );
+  });
+
   it('keeps secret build variables write-only and scoped to the trigger', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       response({

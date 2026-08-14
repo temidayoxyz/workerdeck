@@ -5,8 +5,11 @@ import type {
   BuildLogs,
   BuildToken,
   CloudflareAccount,
+  DurableObjectNamespace,
+  HyperdriveOrigin,
   TriggerBuildInput,
   ProvisionedResource,
+  VectorizeIndexConfig,
   WorkerBuild,
   WorkerDeployment,
   WorkerVersion,
@@ -839,6 +842,167 @@ export class CloudflareClient {
       `/accounts/${accountId}/r2/buckets/${encodeURIComponent(name)}`,
       z.unknown(),
       { method: 'DELETE' },
+    );
+  }
+
+  async createHyperdrive(name: string, origin: HyperdriveOrigin): Promise<ProvisionedResource> {
+    const accountId = this.#requireAccountId();
+    return this.#request(
+      `/accounts/${accountId}/hyperdrive/configs`,
+      z
+        .object({ id: z.string(), name: z.string() })
+        .transform((config) => ({ id: config.id, name: config.name })),
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          name,
+          origin: {
+            database: origin.database,
+            host: origin.host,
+            password: origin.password,
+            port: origin.port,
+            scheme: origin.scheme,
+            user: origin.user,
+          },
+        }),
+      },
+    );
+  }
+
+  async deleteHyperdrive(configId: string): Promise<void> {
+    const accountId = this.#requireAccountId();
+    await this.#request(
+      `/accounts/${accountId}/hyperdrive/configs/${encodeURIComponent(configId)}`,
+      z.unknown(),
+      { method: 'DELETE' },
+    );
+  }
+
+  async createVectorizeIndex(
+    name: string,
+    config: VectorizeIndexConfig,
+  ): Promise<ProvisionedResource> {
+    const accountId = this.#requireAccountId();
+    return this.#request(
+      `/accounts/${accountId}/vectorize/v2/indexes`,
+      z.object({ name: z.string() }).transform((index) => ({ id: index.name, name: index.name })),
+      {
+        method: 'POST',
+        body: JSON.stringify({ name, config: { ...config } }),
+      },
+    );
+  }
+
+  async deleteVectorizeIndex(name: string): Promise<void> {
+    const accountId = this.#requireAccountId();
+    await this.#request(
+      `/accounts/${accountId}/vectorize/v2/indexes/${encodeURIComponent(name)}`,
+      z.unknown(),
+      { method: 'DELETE' },
+    );
+  }
+
+  async createAiGateway(input: {
+    id: string;
+    cacheTtl?: number;
+    collectLogs?: boolean;
+  }): Promise<ProvisionedResource> {
+    const accountId = this.#requireAccountId();
+    return this.#request(
+      `/accounts/${accountId}/ai-gateway/gateways`,
+      z.object({ id: z.string() }).transform((gateway) => ({ id: gateway.id, name: gateway.id })),
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          id: input.id,
+          cache_invalidate_on_update: false,
+          cache_ttl: input.cacheTtl ?? 0,
+          collect_logs: input.collectLogs ?? true,
+          rate_limiting_interval: 0,
+          rate_limiting_limit: 0,
+        }),
+      },
+    );
+  }
+
+  async deleteAiGateway(gatewayId: string): Promise<void> {
+    const accountId = this.#requireAccountId();
+    await this.#request(
+      `/accounts/${accountId}/ai-gateway/gateways/${encodeURIComponent(gatewayId)}`,
+      z.unknown(),
+      { method: 'DELETE' },
+    );
+  }
+
+  async createQueue(name: string): Promise<ProvisionedResource> {
+    const accountId = this.#requireAccountId();
+    return this.#request(
+      `/accounts/${accountId}/queues`,
+      z
+        .object({ queue_id: z.string(), queue_name: z.string() })
+        .transform((queue) => ({ id: queue.queue_id, name: queue.queue_name })),
+      { method: 'POST', body: JSON.stringify({ queue_name: name }) },
+    );
+  }
+
+  async deleteQueue(queueId: string): Promise<void> {
+    const accountId = this.#requireAccountId();
+    await this.#request(
+      `/accounts/${accountId}/queues/${encodeURIComponent(queueId)}`,
+      z.unknown(),
+      { method: 'DELETE' },
+    );
+  }
+
+  async createWorkflow(input: {
+    name: string;
+    className: string;
+    scriptName: string;
+  }): Promise<ProvisionedResource> {
+    const accountId = this.#requireAccountId();
+    return this.#request(
+      `/accounts/${accountId}/workflows/${encodeURIComponent(input.name)}`,
+      z
+        .object({ id: z.string(), name: z.string() })
+        .transform((workflow) => ({ id: workflow.id, name: workflow.name })),
+      {
+        method: 'PUT',
+        body: JSON.stringify({
+          class_name: input.className,
+          script_name: input.scriptName,
+        }),
+      },
+    );
+  }
+
+  async deleteWorkflow(name: string): Promise<void> {
+    const accountId = this.#requireAccountId();
+    await this.#request(
+      `/accounts/${accountId}/workflows/${encodeURIComponent(name)}`,
+      z.unknown(),
+      { method: 'DELETE' },
+    );
+  }
+
+  async listDurableObjectNamespaces(): Promise<DurableObjectNamespace[]> {
+    const accountId = this.#requireAccountId();
+    return this.#request(
+      `/accounts/${accountId}/workers/durable_objects/namespaces`,
+      z.array(
+        z
+          .object({
+            id: z.string(),
+            name: z.string(),
+            class: z.string().optional().default(''),
+            script: z.string().optional().default(''),
+          })
+          .transform((namespace) => ({
+            id: namespace.id,
+            name: namespace.name,
+            className: namespace.class,
+            scriptName: namespace.script,
+          })),
+      ),
     );
   }
 

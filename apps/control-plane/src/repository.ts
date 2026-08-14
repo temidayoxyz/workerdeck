@@ -11,6 +11,7 @@ import {
   type Project,
   type ManagedResource,
   type ResourceKind,
+  type ResourceStatus,
   type WorkerDomain,
 } from '@workerdeck/contracts';
 import type { WorkerBuild } from '@workerdeck/provider';
@@ -102,6 +103,7 @@ interface ManagedResourceRow {
   cloudflare_id: string;
   name: string;
   ownership_tag: string;
+  status: ResourceStatus;
   created_at: string;
   deleted_at: string | null;
 }
@@ -168,6 +170,7 @@ const toManagedResource = (row: ManagedResourceRow): ManagedResource => ({
   cloudflareId: row.cloudflare_id,
   name: row.name,
   ownershipTag: row.ownership_tag,
+  status: row.status,
   createdAt: normalizeStorageTimestamp(row.created_at),
   deletedAt: normalizeNullableStorageTimestamp(row.deleted_at),
 });
@@ -225,6 +228,10 @@ export class Repository {
       domain: 0,
       queue: 0,
       workflow: 0,
+      hyperdrive: 0,
+      vectorize: 0,
+      ai_gateway: 0,
+      durable_object: 0,
     };
     for (const row of resourceCounts.results) counts[row.kind] = row.count;
 
@@ -540,10 +547,11 @@ export class Repository {
   async recordManagedResource(input: {
     projectId: string;
     environmentId: string;
-    kind: 'd1' | 'kv' | 'r2' | 'domain';
+    kind: ResourceKind;
     cloudflareId: string;
     name: string;
     configuration?: Record<string, unknown>;
+    status?: Extract<ResourceStatus, 'active' | 'adopted'>;
     actor: string;
     requestId: string;
   }): Promise<ManagedResource> {
@@ -562,8 +570,8 @@ export class Repository {
         .prepare(
           `INSERT INTO managed_resources (
             id, project_id, environment_id, kind, cloudflare_id, name, ownership_tag,
-            configuration_json, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            configuration_json, status, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           id,
@@ -574,6 +582,7 @@ export class Repository {
           input.name,
           ownershipTag,
           JSON.stringify(input.configuration ?? {}),
+          input.status ?? 'active',
           now,
         ),
       this.db
@@ -609,28 +618,27 @@ export class Repository {
     const now = new Date().toISOString();
     const existing = await this.db
       .prepare(
-        "SELECT id, cloudflare_id FROM managed_resources WHERE kind = 'domain' AND environment_id = ? AND deleted_at IS NULL",
+        "SELECT id, cloudflare_id, status FROM managed_resources WHERE kind = 'domain' AND environment_id = ? AND deleted_at IS NULL",
       )
       .bind(input.environmentId)
-      .all<{ id: string; cloudflare_id: string }>();
-    const existingByCloudflareId = new Map(
-      existing.results.map((row) => [row.cloudflare_id, row.id]),
-    );
+      .all<{ id: string; cloudflare_id: string; status: ResourceStatus }>();
+    const existingByCloudflareId = new Map(existing.results.map((row) => [row.cloudflare_id, row]));
     const statements: D1PreparedStatement[] = [];
     for (const domain of input.domains) {
-      const existingId = existingByCloudflareId.get(domain.id);
+      const existingRow = existingByCloudflareId.get(domain.id);
       const configuration = JSON.stringify({
         certificateId: domain.certificateId,
         source: 'synced',
       });
-      if (existingId) {
+      if (existingRow) {
+        if (existingRow.status === 'detaching') continue;
         statements.push(
           this.db
             .prepare(
               `UPDATE managed_resources SET name = ?, configuration_json = ?
                WHERE id = ?`,
             )
-            .bind(domain.hostname, configuration, existingId),
+            .bind(domain.hostname, configuration, existingRow.id),
         );
       } else {
         statements.push(
@@ -656,6 +664,7 @@ export class Repository {
     }
     const presentIds = new Set(input.domains.map((domain) => domain.id));
     for (const row of existing.results) {
+      if (row.status === 'detaching') continue;
       if (!presentIds.has(row.cloudflare_id)) {
         statements.push(this.db.prepare('DELETE FROM managed_resources WHERE id = ?').bind(row.id));
       }
@@ -667,7 +676,7 @@ export class Repository {
     const rows = await this.db
       .prepare(
         `SELECT r.id, r.cloudflare_id, r.name, r.project_id, r.environment_id, r.ownership_tag,
-                r.configuration_json, e.kind AS environment_kind
+                r.configuration_json, r.status, e.kind AS environment_kind
          FROM managed_resources r
          LEFT JOIN environments e ON e.id = r.environment_id
          WHERE r.kind = 'domain' AND r.deleted_at IS NULL
@@ -682,14 +691,20 @@ export class Repository {
         environment_id: string | null;
         ownership_tag: string;
         configuration_json: string;
+        status: ResourceStatus;
         environment_kind: Environment['kind'] | null;
       }>();
     return rows.results.map((row) => {
-      let configuration: { certificateId?: unknown; source?: unknown } = {};
+      let configuration: {
+        certificateId?: unknown;
+        source?: unknown;
+        detachError?: { status?: unknown; message?: unknown };
+      } = {};
       try {
         configuration = JSON.parse(row.configuration_json) as {
           certificateId?: unknown;
           source?: unknown;
+          detachError?: { status?: unknown; message?: unknown };
         };
       } catch {
         configuration = {};
@@ -704,17 +719,85 @@ export class Repository {
         certificateId:
           typeof configuration.certificateId === 'string' ? configuration.certificateId : null,
         source: row.ownership_tag.startsWith('workerdeck:') ? 'managed' : 'synced',
+        status: row.status,
+        providerError:
+          typeof configuration.detachError?.message === 'string'
+            ? configuration.detachError.message.slice(0, 1000)
+            : null,
       };
     });
   }
 
-  async removeDomainRecord(cloudflareId: string, environmentId: string): Promise<void> {
+  async removeDomainRecord(cloudflareId: string): Promise<void> {
     await this.db
       .prepare(
         `UPDATE managed_resources SET deleted_at = ?
-         WHERE kind = 'domain' AND cloudflare_id = ? AND environment_id = ? AND deleted_at IS NULL`,
+         WHERE kind = 'domain' AND cloudflare_id = ? AND deleted_at IS NULL`,
       )
-      .bind(new Date().toISOString(), cloudflareId, environmentId)
+      .bind(new Date().toISOString(), cloudflareId)
+      .run();
+  }
+
+  async markDomainDetaching(
+    cloudflareId: string,
+    error: { status: number; message: string },
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db
+      .prepare(
+        `UPDATE managed_resources
+         SET status = 'detaching',
+             configuration_json = json_set(
+             COALESCE(configuration_json, '{}'),
+             '$.detachError',
+             json(?)),
+             deleted_at = NULL
+         WHERE kind = 'domain' AND cloudflare_id = ? AND deleted_at IS NULL`,
+      )
+      .bind(JSON.stringify({ status: error.status, message: error.message, at: now }), cloudflareId)
+      .run();
+  }
+
+  async listDetachingDomains(): Promise<
+    Array<{ id: string; cloudflareId: string; environmentId: string | null }>
+  > {
+    const result = await this.db
+      .prepare(
+        "SELECT id, cloudflare_id, environment_id FROM managed_resources WHERE kind = 'domain' AND status = 'detaching' AND deleted_at IS NULL",
+      )
+      .all<{ id: string; cloudflare_id: string; environment_id: string | null }>();
+    return result.results.map((row) => ({
+      id: row.id,
+      cloudflareId: row.cloudflare_id,
+      environmentId: row.environment_id,
+    }));
+  }
+
+  async updateDomainDetachError(
+    id: string,
+    error: { status: number; message: string },
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db
+      .prepare(
+        `UPDATE managed_resources
+         SET configuration_json = json_set(
+           COALESCE(configuration_json, '{}'),
+           '$.detachError',
+           json(?))
+         WHERE id = ? AND kind = 'domain' AND status = 'detaching' AND deleted_at IS NULL`,
+      )
+      .bind(JSON.stringify({ status: error.status, message: error.message, at: now }), id)
+      .run();
+  }
+
+  async removeDomainRecordById(id: string): Promise<void> {
+    await this.db
+      .prepare(
+        `UPDATE managed_resources SET deleted_at = ?
+         WHERE id = ? AND kind = 'domain' AND deleted_at IS NULL`,
+      )
+      .bind(new Date().toISOString(), id)
       .run();
   }
 

@@ -89,8 +89,18 @@ export function DomainsPage({ summary }: { summary: DashboardSummary | null }): 
                 <span>
                   <LockKeyhole size={14} /> {domain.certificateId ? 'Active' : 'Provisioning'}
                 </span>
-                <span className="healthy-label">
-                  <i /> {domain.source === 'synced' ? 'Synced' : 'Managed'}
+                <span
+                  className={`healthy-label ${domain.status === 'detaching' ? 'health-badge--progress' : ''}`}
+                  title={domain.providerError ?? undefined}
+                >
+                  <i />{' '}
+                  {domain.status === 'detaching'
+                    ? 'Detaching'
+                    : domain.status === 'adopted'
+                      ? 'Adopted'
+                      : domain.source === 'synced'
+                        ? 'Synced'
+                        : 'Managed'}
                 </span>
               </div>
             );

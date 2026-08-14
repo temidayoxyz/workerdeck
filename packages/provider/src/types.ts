@@ -123,6 +123,27 @@ export interface ProvisionedResource {
   name: string;
 }
 
+export interface HyperdriveOrigin {
+  database: string;
+  host: string;
+  password: string;
+  port: number;
+  scheme: 'postgres' | 'postgresql' | 'mysql';
+  user: string;
+}
+
+export interface VectorizeIndexConfig {
+  dimensions: number;
+  metric: 'cosine' | 'euclidean' | 'dotproduct';
+}
+
+export interface DurableObjectNamespace {
+  id: string;
+  name: string;
+  className: string;
+  scriptName: string;
+}
+
 export interface WorkerAnalyticsRow {
   timestamp: string;
   workerName: string;
