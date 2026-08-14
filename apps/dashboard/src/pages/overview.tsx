@@ -15,6 +15,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { DeploymentRail } from '../components/deployment-rail';
 import { DeploymentStatus } from '../components/status';
 import { relativeTime, shortSha, titleCase } from '../lib/format';
+import { greetingFor } from '../lib/greeting';
 import { projectReleaseState } from '../lib/project-release';
 
 interface OverviewPageProps {
@@ -73,7 +74,7 @@ export function OverviewPage({
       <section className="page-intro">
         <div>
           <span className="eyebrow">Account overview</span>
-          <h1>Good morning.</h1>
+          <h1>{greetingFor(new Date())}</h1>
           <p>Your Cloudflare applications, releases, and owned resources in one place.</p>
         </div>
         <div
@@ -91,11 +92,27 @@ export function OverviewPage({
             <strong>
               {summary.sync.status === 'disconnected'
                 ? 'Cloudflare sync is paused'
-                : 'Some projects need attention'}
+                : 'Build reconciliation issue'}
             </strong>
             <small>
               {summary.sync.message ?? 'Build reconciliation reported a provider problem.'}
             </small>
+            {summary.sync.failures.length > 0 ? (
+              <span className="sync-alert-projects">
+                {summary.sync.failures.flatMap((failure) => {
+                  const project = summary.projects.find(
+                    (candidate) => candidate.id === failure.projectId,
+                  );
+                  return project
+                    ? [
+                        <Link key={failure.projectId} to={`/projects/${project.id}/deployments`}>
+                          {project.name}
+                        </Link>,
+                      ]
+                    : [];
+                })}
+              </span>
+            ) : null}
           </span>
         </div>
       ) : null}

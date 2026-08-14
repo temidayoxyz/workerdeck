@@ -110,6 +110,12 @@ export const dashboardSummarySchema = z.object({
       status: z.enum(['ok', 'degraded', 'disconnected']),
       message: z.string().max(500).nullable(),
       checkedAt: isoDateSchema.nullable(),
+      failures: z.array(
+        z.object({
+          projectId: z.uuid(),
+          message: z.string().max(500),
+        }),
+      ),
     })
     .nullable(),
 });

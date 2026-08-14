@@ -3926,6 +3926,22 @@ select:focus-visible {
   color: var(--ink-soft);
   font-size: 12px;
 }
+.sync-alert-projects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 7px;
+}
+.sync-alert-projects a {
+  color: var(--orange);
+  font-size: 12px;
+  font-weight: 650;
+}
+.sync-alert-projects a:hover,
+.sync-alert-projects a:focus-visible {
+  color: var(--orange-deep);
+  text-decoration: underline;
+}
 
 /* Human-readable build failure diagnosis ----------------------------------- */
 .build-diagnosis {

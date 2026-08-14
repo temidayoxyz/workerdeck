@@ -1485,7 +1485,7 @@ async function syncProviderBuilds(env: AppEnv['Bindings']): Promise<void> {
     message:
       failures.length === 0
         ? null
-        : `${failures.length} project build(s) could not be reconciled with Cloudflare.`,
+        : `${failures.length} project${failures.length === 1 ? '' : 's'} could not be reconciled with Cloudflare.`,
     failures,
   });
 }

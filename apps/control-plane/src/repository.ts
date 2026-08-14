@@ -235,6 +235,7 @@ export class Repository {
             status: health.status,
             message: health.message,
             checkedAt: normalizeNullableStorageTimestamp(health.checkedAt),
+            failures: health.failures,
           }
         : null,
     };
@@ -976,6 +977,7 @@ export class Repository {
     checkedAt: string;
     targetCount: number;
     failureCount: number;
+    failures: Array<{ projectId: string; message: string }>;
   } | null> {
     const row = await this.db
       .prepare("SELECT value FROM settings WHERE key = 'build_sync_health'")
@@ -983,24 +985,43 @@ export class Repository {
     if (!row) return null;
     try {
       const parsed = JSON.parse(row.value) as {
-        status: 'ok' | 'degraded' | 'disconnected';
-        message: string | null;
-        checkedAt: string;
-        targetCount: number;
-        failureCount: number;
+        status?: unknown;
+        message?: unknown;
+        checkedAt?: unknown;
+        targetCount?: unknown;
+        failureCount?: unknown;
+        failures?: unknown;
       };
       if (
-        !['ok', 'degraded', 'disconnected'].includes(parsed.status) ||
+        (parsed.status !== 'ok' &&
+          parsed.status !== 'degraded' &&
+          parsed.status !== 'disconnected') ||
         typeof parsed.checkedAt !== 'string'
       ) {
         return null;
       }
+      const failures = Array.isArray(parsed.failures)
+        ? parsed.failures.flatMap((failure): Array<{ projectId: string; message: string }> => {
+            if (typeof failure !== 'object' || failure === null) return [];
+            const candidate = failure as { projectId?: unknown; message?: unknown };
+            return typeof candidate.projectId === 'string' && typeof candidate.message === 'string'
+              ? [{ projectId: candidate.projectId, message: candidate.message }]
+              : [];
+          })
+        : [];
       return {
         status: parsed.status,
         message: typeof parsed.message === 'string' ? parsed.message : null,
         checkedAt: parsed.checkedAt,
-        targetCount: Number(parsed.targetCount) || 0,
-        failureCount: Number(parsed.failureCount) || 0,
+        targetCount:
+          typeof parsed.targetCount === 'number' && Number.isFinite(parsed.targetCount)
+            ? parsed.targetCount
+            : 0,
+        failureCount:
+          typeof parsed.failureCount === 'number' && Number.isFinite(parsed.failureCount)
+            ? parsed.failureCount
+            : 0,
+        failures,
       };
     } catch {
       return null;

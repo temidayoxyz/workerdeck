@@ -115,5 +115,5 @@ export const demoSummary: DashboardSummary = {
     },
   ],
   resourceCounts: { worker: 3, d1: 2, kv: 1, r2: 2, domain: 3, queue: 1, workflow: 0 },
-  sync: { status: 'ok', message: null, checkedAt: minutesAgo(2) },
+  sync: { status: 'ok', message: null, checkedAt: minutesAgo(2), failures: [] },
 };
