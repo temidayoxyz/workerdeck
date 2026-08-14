@@ -13,6 +13,7 @@ import {
   managedResourceSchema,
   recoveryPostureSchema,
   usageSummarySchema,
+  webAnalyticsSchema,
   workerAnalyticsSchema,
   projectSchema,
   type ApiSuccess,
@@ -33,6 +34,7 @@ import {
   type Project,
   type RecoveryPosture,
   type UsageSummary,
+  type WebAnalytics,
   type WorkerAnalytics,
 } from '@workerdeck/contracts';
 import { z } from 'zod';
@@ -308,6 +310,22 @@ export async function getWorkerAnalytics(
     (value) => {
       const envelope = value as ApiSuccess<unknown>;
       return workerAnalyticsSchema.parse(envelope.data);
+    },
+  );
+}
+
+export async function getWebAnalytics(
+  projectId: string,
+  environmentId: string,
+  hours = 24,
+): Promise<WebAnalytics> {
+  if (isDemoMode()) return Promise.resolve(demoWebAnalytics(hours));
+  return request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/analytics/web?hours=${hours}`,
+    { method: 'GET' },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return webAnalyticsSchema.parse(envelope.data);
     },
   );
 }
@@ -808,5 +826,32 @@ function demoAnalytics(hours: number): WorkerAnalytics {
     cpuTimeP99: 44,
     projects,
     points: projects[0]?.points ?? [],
+  };
+}
+
+function demoWebAnalytics(hours: number): WebAnalytics {
+  const to = new Date();
+  const from = new Date(to.getTime() - hours * 60 * 60 * 1000);
+  return {
+    from: from.toISOString(),
+    to: to.toISOString(),
+    sampled: true,
+    hostnames: ['northstar.example.com', 'workerdeck-northstar-web.example-subdomain.workers.dev'],
+    visits: 12_408,
+    pageViews: 21_906,
+    vitals: {
+      lcpP75: 1_640,
+      inpP75: 218,
+      clsP75: 0.08,
+      fcpP75: 1_180,
+      ttfbP75: 312,
+    },
+    topPaths: [
+      { path: '/', pageViews: 9_204, visits: 4_311 },
+      { path: '/pricing', pageViews: 3_807, visits: 2_106 },
+      { path: '/docs/getting-started', pageViews: 2_418, visits: 1_392 },
+      { path: '/blog/launch-week', pageViews: 1_654, visits: 1_001 },
+      { path: '/changelog', pageViews: 1_119, visits: 612 },
+    ],
   };
 }

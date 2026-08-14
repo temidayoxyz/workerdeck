@@ -1,6 +1,7 @@
 import type {
   DashboardSummary,
   ManagedResource,
+  WebAnalytics,
   WorkerAnalyticsProject,
   WorkerDomain,
 } from '@workerdeck/contracts';
@@ -16,6 +17,7 @@ import {
   ExternalLink,
   Github,
   GitBranch,
+  Gauge,
   GitCommitHorizontal,
   Globe2,
   KeyRound,
@@ -48,6 +50,7 @@ import {
   getEnvironmentVariables,
   getManagedResources,
   getProjectDomains,
+  getWebAnalytics,
   getWorkerAnalytics,
   upsertEnvironmentVariable,
 } from '../lib/api';
@@ -69,6 +72,10 @@ export function ProjectPage({
   );
   const [resources, setResources] = useState<ManagedResource[]>([]);
   const [analytics, setAnalytics] = useState<WorkerAnalyticsProject | null>(null);
+  const [webAnalytics, setWebAnalytics] = useState<WebAnalytics | null>(null);
+  const [webAnalyticsStatus, setWebAnalyticsStatus] = useState<'loading' | 'ready' | 'unavailable'>(
+    'loading',
+  );
   useEffect(() => {
     let active = true;
     void getManagedResources()
@@ -105,6 +112,31 @@ export function ProjectPage({
       active = false;
     };
   }, [environment?.workerName]);
+  useEffect(() => {
+    let active = true;
+    if (!projectId || !environment) {
+      setWebAnalytics(null);
+      setWebAnalyticsStatus('loading');
+      return () => {
+        active = false;
+      };
+    }
+    setWebAnalyticsStatus('loading');
+    void getWebAnalytics(projectId, environment.id, 24)
+      .then((result) => {
+        if (!active) return;
+        setWebAnalytics(result);
+        setWebAnalyticsStatus('ready');
+      })
+      .catch(() => {
+        if (!active) return;
+        setWebAnalytics(null);
+        setWebAnalyticsStatus('unavailable');
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId, environment?.id]);
   if (!project) return <MissingProject />;
   const current = summary?.deployments.find(
     (deployment) =>
@@ -242,6 +274,72 @@ export function ProjectPage({
             </span>
             <ArrowRight size={16} />
           </Link>
+        </section>
+        <section
+          className={`panel web-analytics-card${
+            webAnalyticsStatus === 'ready' && webAnalytics && hasWebAnalyticsData(webAnalytics)
+              ? ''
+              : ' web-analytics-card--empty'
+          }`}
+        >
+          <div className="section-heading">
+            <h2>
+              Web Analytics <span>· Core Web Vitals · last 24 hours</span>
+            </h2>
+            <Gauge size={18} />
+          </div>
+          {webAnalyticsStatus === 'loading' ? (
+            <div className="telemetry-empty">
+              <Gauge size={24} />
+              <span>
+                <strong>Querying Cloudflare Web Analytics…</strong>
+                <small>Core Web Vitals are collected from real browser beacons.</small>
+              </span>
+            </div>
+          ) : webAnalyticsStatus === 'unavailable' ? (
+            <div className="telemetry-empty">
+              <AlertCircle size={24} />
+              <span>
+                <strong>Web Analytics unavailable</strong>
+                <small>
+                  WorkerDeck could not query Cloudflare real-user metrics for this project.
+                </small>
+              </span>
+            </div>
+          ) : webAnalytics && hasWebAnalyticsData(webAnalytics) ? (
+            <div className="web-analytics-layout">
+              <div className="web-visitors-block">
+                <div className="web-visitor-kpis">
+                  <strong>
+                    {compactNumber(webAnalytics.visits)}
+                    <small>Visits</small>
+                  </strong>
+                  <strong>
+                    {compactNumber(webAnalytics.pageViews)}
+                    <small>Page views</small>
+                  </strong>
+                </div>
+                <span className="web-visitors-scope">
+                  <Globe2 size={14} />
+                  {webAnalytics.hostnames.join('  ·  ')}
+                </span>
+              </div>
+              <WebVitalsRail vitals={webAnalytics.vitals} />
+              <WebAnalyticsTopPaths paths={webAnalytics.topPaths} total={webAnalytics.pageViews} />
+            </div>
+          ) : (
+            <div className="telemetry-empty">
+              <Gauge size={24} />
+              <span>
+                <strong>No Web Analytics beacons in this window</strong>
+                <small>
+                  Cloudflare reports real-user metrics only for pages that send beacons. Add the Web
+                  Analytics snippet to the production build, or serve the site through a proxied
+                  Cloudflare zone.
+                </small>
+              </span>
+            </div>
+          )}
         </section>
       </div>
     </div>
@@ -1464,4 +1562,170 @@ function percent(value: number): string {
 
 function duration(value: number | null): string {
   return value === null ? '—' : `${value.toFixed(value >= 10 ? 0 : 1)}ms`;
+}
+
+type WebVitalMetric = {
+  key: keyof WebAnalytics['vitals'];
+  code: string;
+  label: string;
+  unit: 'ms' | 'unitless';
+  good: number;
+  poor: number;
+};
+
+const WEB_VITALS: readonly WebVitalMetric[] = [
+  {
+    key: 'lcpP75',
+    code: 'LCP',
+    label: 'Largest contentful paint',
+    unit: 'ms',
+    good: 2500,
+    poor: 4000,
+  },
+  {
+    key: 'inpP75',
+    code: 'INP',
+    label: 'Interaction to next paint',
+    unit: 'ms',
+    good: 200,
+    poor: 500,
+  },
+  {
+    key: 'clsP75',
+    code: 'CLS',
+    label: 'Cumulative layout shift',
+    unit: 'unitless',
+    good: 0.1,
+    poor: 0.25,
+  },
+  {
+    key: 'fcpP75',
+    code: 'FCP',
+    label: 'First contentful paint',
+    unit: 'ms',
+    good: 1800,
+    poor: 3000,
+  },
+  { key: 'ttfbP75', code: 'TTFB', label: 'Time to first byte', unit: 'ms', good: 800, poor: 1800 },
+];
+
+const VITAL_RATING_LABELS = {
+  good: 'Good',
+  fair: 'Needs improvement',
+  poor: 'Poor',
+} as const;
+
+function hasWebAnalyticsData(data: WebAnalytics): boolean {
+  return (
+    data.pageViews > 0 ||
+    data.visits > 0 ||
+    data.topPaths.length > 0 ||
+    Object.values(data.vitals).some((value) => value !== null)
+  );
+}
+
+function vitalRating(value: number, good: number, poor: number): keyof typeof VITAL_RATING_LABELS {
+  if (value <= good) return 'good';
+  if (value < poor) return 'fair';
+  return 'poor';
+}
+
+function vitalPosition(value: number, poor: number): number {
+  return Math.min(Math.max(value / poor, 0), 1) * 100;
+}
+
+function formatVital(value: number, unit: WebVitalMetric['unit']): string {
+  if (unit === 'unitless') return value.toFixed(2);
+  return value >= 1000 ? `${(value / 1000).toFixed(1)}s` : `${Math.round(value)}ms`;
+}
+
+function WebVitalsRail({ vitals }: { vitals: WebAnalytics['vitals'] }): React.JSX.Element {
+  return (
+    <div className="vitals-block">
+      <h3 className="web-analytics-subhead">
+        Core Web Vitals <span>p75 · field data</span>
+      </h3>
+      <ol className="vitals-rail">
+        {WEB_VITALS.map((metric) => {
+          const value = vitals[metric.key];
+          if (value === null) {
+            return (
+              <li key={metric.key} className="vital-row vital-row--idle">
+                <span className="vital-label">
+                  <strong>{metric.code}</strong>
+                  <small>{metric.label}</small>
+                </span>
+                <span className="vital-track">
+                  <i />
+                </span>
+                <span className="vital-value">—</span>
+              </li>
+            );
+          }
+          const rating = vitalRating(value, metric.good, metric.poor);
+          return (
+            <li
+              key={metric.key}
+              className={`vital-row vital-row--${rating}`}
+              aria-label={`${metric.code}, ${formatVital(value, metric.unit)}, ${VITAL_RATING_LABELS[rating]}`}
+            >
+              <span className="vital-label">
+                <strong>{metric.code}</strong>
+                <small>{metric.label}</small>
+              </span>
+              <span className="vital-track">
+                <i style={{ left: `${vitalPosition(value, metric.poor)}%` }} />
+              </span>
+              <span className="vital-value">{formatVital(value, metric.unit)}</span>
+            </li>
+          );
+        })}
+      </ol>
+      <div className="vitals-legend" aria-hidden="true">
+        <span>
+          <i className="legend-dot legend-dot--good" />
+          Good
+        </span>
+        <span>
+          <i className="legend-dot legend-dot--fair" />
+          Needs improvement
+        </span>
+        <span>
+          <i className="legend-dot legend-dot--poor" />
+          Poor
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function WebAnalyticsTopPaths({
+  paths,
+  total,
+}: {
+  paths: WebAnalytics['topPaths'];
+  total: number;
+}): React.JSX.Element {
+  return (
+    <div className="top-paths-block">
+      <h3 className="web-analytics-subhead">
+        Top paths <span>by page views</span>
+      </h3>
+      {paths.length === 0 ? (
+        <p className="muted-copy">No path breakdown in this window.</p>
+      ) : (
+        <ol className="top-paths-list">
+          {paths.map((entry) => (
+            <li key={entry.path}>
+              <code>{entry.path}</code>
+              <span className="path-bar">
+                <i style={{ width: `${total === 0 ? 0 : (entry.pageViews / total) * 100}%` }} />
+              </span>
+              <strong>{compactNumber(entry.pageViews)}</strong>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
 }

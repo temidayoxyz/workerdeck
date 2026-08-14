@@ -155,6 +155,27 @@ export interface WorkerAnalyticsRow {
   cpuTimeP99: number | null;
 }
 
+export interface WebAnalyticsPageViewRow {
+  hostname: string;
+  path: string;
+  pageViews: number;
+  visits: number;
+}
+
+export interface WebAnalyticsVitalsRow {
+  hostname: string;
+  lcpP75: number | null;
+  inpP75: number | null;
+  clsP75: number | null;
+  fcpP75: number | null;
+  ttfbP75: number | null;
+}
+
+export interface WebAnalyticsRows {
+  pageViews: WebAnalyticsPageViewRow[];
+  vitals: WebAnalyticsVitalsRow[];
+}
+
 export interface BuildAccountLimits {
   limitReached: boolean | null;
   refreshesAt: string | null;

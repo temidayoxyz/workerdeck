@@ -4134,3 +4134,264 @@ select:focus-visible {
   font-size: 12px;
   line-height: 1.5;
 }
+
+/* Web Analytics panel -----------------------------------------------------
+ * Real-user field data from Cloudflare Web Analytics. The vitals rail is
+ * the panel's signature: each metric sits on a threshold-scaled gradient
+ * track (Good -> Needs improvement -> Poor), so position and color both
+ * encode Cloudflare's Core Web Vitals rating.
+ */
+.web-analytics-card {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.web-analytics-card .section-heading svg {
+  color: var(--cyan);
+}
+.web-analytics-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+}
+.web-visitors-block {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.web-visitor-kpis {
+  display: flex;
+  gap: 34px;
+}
+.web-visitor-kpis strong,
+.web-visitor-kpis small {
+  display: block;
+}
+.app-shell .web-analytics-card .web-visitor-kpis strong {
+  font:
+    640 22px 'Archivo Variable',
+    sans-serif;
+  letter-spacing: -0.03em;
+}
+.web-visitor-kpis strong:nth-child(2) {
+  color: var(--cyan);
+}
+.app-shell .web-analytics-card .web-visitor-kpis small {
+  margin-top: 2px;
+  color: var(--ink-faint);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.web-visitors-scope {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  color: var(--ink-faint);
+  font:
+    12px 'IBM Plex Mono',
+    monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.web-visitors-scope svg {
+  flex: 0 0 auto;
+  color: var(--cyan);
+}
+.vitals-block {
+  min-width: 0;
+  padding: 16px 18px 18px;
+  border-right: 1px solid var(--line-soft);
+}
+.top-paths-block {
+  min-width: 0;
+  padding: 16px 18px 18px;
+}
+.app-shell .web-analytics-card .web-analytics-subhead {
+  margin: 0 0 14px;
+  color: var(--ink-soft);
+  font-family: 'Archivo Variable', sans-serif;
+  font-size: 13px;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+}
+.web-analytics-subhead span {
+  color: var(--ink-faint);
+  font-family: 'Public Sans Variable', sans-serif;
+  font-size: 11px;
+  font-weight: 450;
+}
+.vitals-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.vital-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(120px, 1fr) 64px;
+  align-items: center;
+  gap: 16px;
+}
+.vital-label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.app-shell .web-analytics-card .vital-label strong {
+  font:
+    620 12px 'IBM Plex Mono',
+    monospace;
+  letter-spacing: 0.08em;
+}
+.app-shell .web-analytics-card .vital-label small {
+  overflow: hidden;
+  color: var(--ink-faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vital-track {
+  position: relative;
+  height: 4px;
+  background: linear-gradient(90deg, var(--green) 0%, var(--yellow) 52%, var(--red) 100%);
+  border-radius: 999px;
+  opacity: 0.5;
+}
+.vital-track i {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 11px;
+  height: 11px;
+  background: var(--ink-faint);
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--line-strong);
+  transform: translate(-50%, -50%);
+  transition: left 240ms ease;
+}
+.vital-row--good .vital-track i {
+  background: var(--green);
+}
+.vital-row--fair .vital-track i {
+  background: var(--yellow);
+}
+.vital-row--poor .vital-track i {
+  background: var(--red);
+}
+.vital-row--idle .vital-track {
+  opacity: 0.25;
+}
+.vital-value {
+  color: var(--ink);
+  font:
+    620 14px 'Archivo Variable',
+    sans-serif;
+  letter-spacing: -0.02em;
+  text-align: right;
+}
+.vitals-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+}
+.vitals-legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+.legend-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.legend-dot--good {
+  background: var(--green);
+}
+.legend-dot--fair {
+  background: var(--yellow);
+}
+.legend-dot--poor {
+  background: var(--red);
+}
+.top-paths-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.top-paths-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(80px, 0.8fr) 64px;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.top-paths-list li:last-child {
+  border-bottom: 0;
+}
+.app-shell .web-analytics-card .top-paths-list code {
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.path-bar {
+  height: 4px;
+  overflow: hidden;
+  background: var(--surface-raised);
+  border-radius: 999px;
+}
+.path-bar i {
+  display: block;
+  height: 100%;
+  background: var(--cyan);
+  border-radius: 999px;
+}
+.app-shell .web-analytics-card .top-paths-list strong {
+  font:
+    620 13px 'Archivo Variable',
+    sans-serif;
+  text-align: right;
+}
+
+@media (max-width: 850px) {
+  .web-analytics-layout {
+    grid-template-columns: 1fr;
+  }
+  .vitals-block {
+    border-right: 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .vital-row {
+    grid-template-columns: minmax(120px, 0.8fr) minmax(90px, 1fr) 56px;
+  }
+}
+
+@media (max-width: 620px) {
+  .web-visitors-block {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .web-visitor-kpis {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .web-visitors-scope {
+    width: 100%;
+  }
+}

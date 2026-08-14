@@ -21,6 +21,7 @@ import type {
   CreateBuildTriggerInput,
   UpdateBuildTriggerInput,
   WorkerAnalyticsRow,
+  WebAnalyticsRows,
   BuildAccountLimits,
 } from './types';
 
@@ -227,6 +228,91 @@ export class CloudflareClient {
         cpuTimeP50: row.quantiles.cpuTimeP50 ?? null,
         cpuTimeP99: row.quantiles.cpuTimeP99 ?? null,
       }));
+  }
+
+  async getWebAnalytics(from: string, to: string, hostnames: string[]): Promise<WebAnalyticsRows> {
+    const accountId = this.#requireAccountId();
+    if (hostnames.length === 0) return { pageViews: [], vitals: [] };
+    const hostnameSet = new Set(hostnames.map((hostname) => hostname.toLowerCase()));
+    const pageViewRowSchema = z.object({
+      dimensions: z.object({
+        requestHost: z.string(),
+        requestPath: z.string().nullish(),
+      }),
+      count: z.number().nonnegative(),
+      sum: z.object({ visits: z.number().nonnegative() }),
+    });
+    const vitalsRowSchema = z.object({
+      dimensions: z.object({ requestHost: z.string() }),
+      quantiles: z.object({
+        largestContentfulPaintP75: z.number().nonnegative().nullish(),
+        interactionToNextPaintP75: z.number().nonnegative().nullish(),
+        cumulativeLayoutShiftP75: z.number().nonnegative().nullish(),
+        firstContentfulPaintP75: z.number().nonnegative().nullish(),
+        timeToFirstByteP75: z.number().nonnegative().nullish(),
+      }),
+    });
+    const result = await this.#graphql(
+      `query WorkerDeckWebAnalytics($accountTag: string, $from: string, $to: string) {
+        viewer {
+          accounts(filter: { accountTag: $accountTag }) {
+            pageViews: rumPageloadEventsAdaptiveGroups(
+              limit: 10000
+              filter: { datetime_geq: $from, datetime_leq: $to }
+            ) {
+              count
+              sum { visits }
+              dimensions { requestHost requestPath }
+            }
+            vitals: rumWebVitalsEventsAdaptiveGroups(
+              limit: 10000
+              filter: { datetime_geq: $from, datetime_leq: $to }
+            ) {
+              quantiles {
+                largestContentfulPaintP75
+                interactionToNextPaintP75
+                cumulativeLayoutShiftP75
+                firstContentfulPaintP75
+                timeToFirstByteP75
+              }
+              dimensions { requestHost }
+            }
+          }
+        }
+      }`,
+      { accountTag: accountId, from, to },
+      z.object({
+        viewer: z.object({
+          accounts: z.array(
+            z.object({
+              pageViews: z.array(pageViewRowSchema),
+              vitals: z.array(vitalsRowSchema),
+            }),
+          ),
+        }),
+      }),
+    );
+    const datasets = result.viewer.accounts[0] ?? { pageViews: [], vitals: [] };
+    return {
+      pageViews: datasets.pageViews
+        .filter((row) => hostnameSet.has(row.dimensions.requestHost.toLowerCase()))
+        .map((row) => ({
+          hostname: row.dimensions.requestHost.toLowerCase(),
+          path: row.dimensions.requestPath ?? '/',
+          pageViews: row.count,
+          visits: row.sum.visits,
+        })),
+      vitals: datasets.vitals
+        .filter((row) => hostnameSet.has(row.dimensions.requestHost.toLowerCase()))
+        .map((row) => ({
+          hostname: row.dimensions.requestHost.toLowerCase(),
+          lcpP75: row.quantiles.largestContentfulPaintP75 ?? null,
+          inpP75: row.quantiles.interactionToNextPaintP75 ?? null,
+          clsP75: row.quantiles.cumulativeLayoutShiftP75 ?? null,
+          fcpP75: row.quantiles.firstContentfulPaintP75 ?? null,
+          ttfbP75: row.quantiles.timeToFirstByteP75 ?? null,
+        })),
+    };
   }
 
   async getBuildAccountLimits(): Promise<BuildAccountLimits> {

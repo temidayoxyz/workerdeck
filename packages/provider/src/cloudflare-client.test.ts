@@ -601,6 +601,99 @@ describe('CloudflareClient', () => {
     expect(query.query).toContain('scriptName: $scriptName');
   });
 
+  it('queries account Web Analytics and returns only watched hostname rows', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            viewer: {
+              accounts: [
+                {
+                  pageViews: [
+                    {
+                      dimensions: { requestHost: 'app.example.com', requestPath: '/pricing' },
+                      count: 401,
+                      sum: { visits: 210 },
+                    },
+                    {
+                      dimensions: { requestHost: 'other.example.com', requestPath: '/' },
+                      count: 999,
+                      sum: { visits: 800 },
+                    },
+                    {
+                      dimensions: { requestHost: 'app.example.com', requestPath: null },
+                      count: 60,
+                      sum: { visits: 41 },
+                    },
+                  ],
+                  vitals: [
+                    {
+                      dimensions: { requestHost: 'app.example.com' },
+                      quantiles: {
+                        largestContentfulPaintP75: 1640,
+                        interactionToNextPaintP75: 218,
+                        cumulativeLayoutShiftP75: 0.08,
+                        firstContentfulPaintP75: null,
+                        timeToFirstByteP75: 312,
+                      },
+                    },
+                    {
+                      dimensions: { requestHost: 'other.example.com' },
+                      quantiles: {
+                        largestContentfulPaintP75: 5000,
+                        interactionToNextPaintP75: 900,
+                        cumulativeLayoutShiftP75: 0.3,
+                        firstContentfulPaintP75: 2500,
+                        timeToFirstByteP75: 2000,
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+          errors: null,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(
+      client.getWebAnalytics('2026-08-12T08:00:00.000Z', '2026-08-13T08:00:00.000Z', [
+        'APP.example.com',
+      ]),
+    ).resolves.toEqual({
+      pageViews: [
+        { hostname: 'app.example.com', path: '/pricing', pageViews: 401, visits: 210 },
+        { hostname: 'app.example.com', path: '/', pageViews: 60, visits: 41 },
+      ],
+      vitals: [
+        {
+          hostname: 'app.example.com',
+          lcpP75: 1640,
+          inpP75: 218,
+          clsP75: 0.08,
+          fcpP75: null,
+          ttfbP75: 312,
+        },
+      ],
+    });
+    const [url, init] = fetcher.mock.calls[0]!;
+    expect(url).toBe('https://api.cloudflare.com/client/v4/graphql');
+    const body = JSON.parse(init?.body as string) as {
+      variables: Record<string, unknown>;
+      query: string;
+    };
+    expect(body.variables).toEqual({
+      accountTag: 'account',
+      from: '2026-08-12T08:00:00.000Z',
+      to: '2026-08-13T08:00:00.000Z',
+    });
+    expect(body.query).toContain('rumPageloadEventsAdaptiveGroups');
+    expect(body.query).toContain('rumWebVitalsEventsAdaptiveGroups');
+  });
+
   it('verifies D1 Time Travel bookmarks without invoking restore', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response({ bookmark: 'bookmark-id' }));
     const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });

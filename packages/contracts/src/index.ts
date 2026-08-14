@@ -506,6 +506,31 @@ export const workerAnalyticsSchema = z.object({
   points: z.array(workerAnalyticsPointSchema),
 });
 
+export const webVitalsSchema = z.object({
+  lcpP75: z.number().nonnegative().nullable(),
+  inpP75: z.number().nonnegative().nullable(),
+  clsP75: z.number().nonnegative().nullable(),
+  fcpP75: z.number().nonnegative().nullable(),
+  ttfbP75: z.number().nonnegative().nullable(),
+});
+
+export const webAnalyticsTopPathSchema = z.object({
+  path: z.string().min(1).max(2048),
+  pageViews: z.number().nonnegative(),
+  visits: z.number().nonnegative(),
+});
+
+export const webAnalyticsSchema = z.object({
+  from: isoDateSchema,
+  to: isoDateSchema,
+  sampled: z.literal(true),
+  hostnames: z.array(z.string().min(1).max(253)),
+  visits: z.number().nonnegative(),
+  pageViews: z.number().nonnegative(),
+  vitals: webVitalsSchema,
+  topPaths: z.array(webAnalyticsTopPathSchema),
+});
+
 export const recoveryResourceSchema = z.object({
   resourceId: z.uuid(),
   databaseId: z.string().min(1).max(255),
@@ -567,6 +592,9 @@ export type BuildLogs = z.infer<typeof buildLogsSchema>;
 export type WorkerAnalyticsPoint = z.infer<typeof workerAnalyticsPointSchema>;
 export type WorkerAnalyticsProject = z.infer<typeof workerAnalyticsProjectSchema>;
 export type WorkerAnalytics = z.infer<typeof workerAnalyticsSchema>;
+export type WebVitals = z.infer<typeof webVitalsSchema>;
+export type WebAnalyticsTopPath = z.infer<typeof webAnalyticsTopPathSchema>;
+export type WebAnalytics = z.infer<typeof webAnalyticsSchema>;
 export type RecoveryResource = z.infer<typeof recoveryResourceSchema>;
 export type RecoveryPosture = z.infer<typeof recoveryPostureSchema>;
 export type UsageSummary = z.infer<typeof usageSummarySchema>;

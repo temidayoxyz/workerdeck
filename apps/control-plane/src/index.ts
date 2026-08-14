@@ -14,6 +14,7 @@ import {
   type RecoveryResource,
   type ResourceKind,
   type WorkerAnalytics,
+  type WebAnalytics,
 } from '@workerdeck/contracts';
 import {
   CloudflareApiError,
@@ -35,6 +36,7 @@ import { GitHubAppClient } from './github';
 import { Repository } from './repository';
 import { requestContext, securityHeaders, verifyMutationOrigin } from './security';
 import type { AppEnv } from './types';
+import { aggregateWebAnalytics } from './web-analytics';
 
 const app = new Hono<AppEnv>();
 const buildRepairRevision = 'nonmutating-framework-builds-v3';
@@ -1429,6 +1431,19 @@ app.put('/api/v1/projects/:projectId/environments/:environmentId/cron', async (c
   return context.json({ data: schedules, requestId: context.get('requestId') });
 });
 
+app.get(
+  '/api/v1/projects/:projectId/environments/:environmentId/analytics/web',
+  async (context) => {
+    const data = await webAnalytics(
+      context,
+      context.req.param('projectId'),
+      context.req.param('environmentId'),
+      analyticsRange(context),
+    );
+    return context.json({ data, requestId: context.get('requestId') });
+  },
+);
+
 app.get('/api/v1/cloudflare/durable-objects/namespaces', async (context) => {
   const namespaces = await cloudflareClient(context).listDurableObjectNamespaces();
   return context.json({ data: namespaces, requestId: context.get('requestId') });
@@ -2046,6 +2061,36 @@ async function workerAnalytics(
     }),
     points: includeTimeseries ? pointsFor(rows) : [],
   };
+}
+
+async function webAnalytics(
+  context: Context<AppEnv>,
+  projectId: string,
+  environmentId: string,
+  range: { from: string; to: string },
+): Promise<WebAnalytics> {
+  const repository = new Repository(context.env.DB);
+  const summary = await dashboardSummary(context);
+  const environment = summary.environments.find(
+    (candidate) => candidate.id === environmentId && candidate.projectId === projectId,
+  );
+  if (!environment) {
+    throw new AppError(404, 'ENVIRONMENT_NOT_FOUND', 'The selected environment does not exist.');
+  }
+  const hostnames = new Set<string>();
+  if (environment.url) hostnames.add(new URL(environment.url).hostname.toLowerCase());
+  const domains = await repository.listSyncedDomains();
+  for (const domain of domains) {
+    if (domain.projectId === projectId && domain.status !== 'detaching') {
+      hostnames.add(domain.hostname.toLowerCase());
+    }
+  }
+  const hostnameList = [...hostnames];
+  if (hostnameList.length === 0) {
+    return aggregateWebAnalytics(range, [], { pageViews: [], vitals: [] });
+  }
+  const rows = await cloudflareClient(context).getWebAnalytics(range.from, range.to, hostnameList);
+  return aggregateWebAnalytics(range, hostnameList, rows);
 }
 
 async function requireBuildToken(
