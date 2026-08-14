@@ -1797,7 +1797,7 @@ select:focus-visible {
 .data-row {
   display: grid;
   min-height: 57px;
-  grid-template-columns: 100px 95px minmax(220px, 1.4fr) 110px minmax(130px, 0.8fr) 85px 34px;
+  grid-template-columns: 100px 95px minmax(220px, 1.4fr) 110px minmax(130px, 0.8fr) 85px 72px;
   align-items: center;
   gap: 12px;
   padding: 0 15px;
@@ -3932,6 +3932,11 @@ select:focus-visible {
   gap: 6px 14px;
   margin-top: 7px;
 }
+.sync-alert-project {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
 .sync-alert-projects a {
   color: var(--orange);
   font-size: 12px;
@@ -3941,6 +3946,14 @@ select:focus-visible {
 .sync-alert-projects a:focus-visible {
   color: var(--orange-deep);
   text-decoration: underline;
+}
+.sync-alert-project small {
+  max-width: 420px;
+  overflow: hidden;
+  color: var(--ink-faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Human-readable build failure diagnosis ----------------------------------- */

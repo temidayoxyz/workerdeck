@@ -296,36 +296,45 @@ export function ProjectDeploymentsPage({
             <code>{deployment.gitBranch ?? project.productionBranch}</code>
             <span>{deployment.triggeredBy}</span>
             <span>{relativeTime(deployment.createdAt)}</span>
-            <button
-              className="row-action danger-action"
-              type="button"
-              aria-label="Delete deployment"
-              disabled={
-                deleting === deployment.id ||
-                ['queued', 'building', 'deploying'].includes(deployment.status)
-              }
-              onClick={() => {
-                if (
-                  !window.confirm(
-                    'Delete this deployment record? WorkerDeck will also remove its historical Cloudflare Worker deployment when one exists. Cloudflare build logs follow Cloudflare retention.',
+            <span className="deployment-actions">
+              <Link
+                className="row-action"
+                to={`/projects/${project.id}/logs/${deployment.id}`}
+                aria-label={`View build logs for ${deployment.gitCommitMessage ?? 'deployment'}`}
+              >
+                <Code2 size={15} />
+              </Link>
+              <button
+                className="row-action danger-action"
+                type="button"
+                aria-label="Delete deployment"
+                disabled={
+                  deleting === deployment.id ||
+                  ['queued', 'building', 'deploying'].includes(deployment.status)
+                }
+                onClick={() => {
+                  if (
+                    !window.confirm(
+                      'Delete this deployment record? WorkerDeck will also remove its historical Cloudflare Worker deployment when one exists. Cloudflare build logs follow Cloudflare retention.',
+                    )
                   )
-                )
-                  return;
-                setDeleting(deployment.id);
-                setDeleteError(null);
-                void deploymentDeleted(deployment.id)
-                  .catch((reason: unknown) =>
-                    setDeleteError(
-                      reason instanceof Error
-                        ? reason.message
-                        : 'The deployment could not be deleted.',
-                    ),
-                  )
-                  .finally(() => setDeleting(null));
-              }}
-            >
-              <Trash2 size={16} />
-            </button>
+                    return;
+                  setDeleting(deployment.id);
+                  setDeleteError(null);
+                  void deploymentDeleted(deployment.id)
+                    .catch((reason: unknown) =>
+                      setDeleteError(
+                        reason instanceof Error
+                          ? reason.message
+                          : 'The deployment could not be deleted.',
+                      ),
+                    )
+                    .finally(() => setDeleting(null));
+                }}
+              >
+                <Trash2 size={16} />
+              </button>
+            </span>
           </div>
         ))}
       </section>

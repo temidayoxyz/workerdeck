@@ -105,9 +105,10 @@ export function OverviewPage({
                   );
                   return project
                     ? [
-                        <Link key={failure.projectId} to={`/projects/${project.id}/deployments`}>
-                          {project.name}
-                        </Link>,
+                        <span className="sync-alert-project" key={failure.projectId}>
+                          <Link to={`/projects/${project.id}/deployments`}>{project.name}</Link>
+                          <small>{failure.message}</small>
+                        </span>,
                       ]
                     : [];
                 })}
