@@ -67,4 +67,81 @@ describe('detectFramework', () => {
       ready: true,
     });
   });
+
+  it('detects Cloudflare-adapter Worker frameworks', () => {
+    const cases = [
+      { dependency: '@sveltejs/kit', framework: 'sveltekit', displayName: 'SvelteKit' },
+      { dependency: '@remix-run/dev', framework: 'remix', displayName: 'Remix' },
+      { dependency: 'nuxt', framework: 'nuxt', displayName: 'Nuxt' },
+      { dependency: '@builder.io/qwik', framework: 'qwik', displayName: 'Qwik City' },
+      { dependency: '@react-router/dev', framework: 'react-router', displayName: 'React Router' },
+      { dependency: '@analogjs/platform', framework: 'analog', displayName: 'Analog' },
+      { dependency: 'nitropack', framework: 'nitro', displayName: 'Nitro' },
+    ];
+    for (const candidate of cases) {
+      expect(
+        detectFramework({
+          files: ['package.json'],
+          packageJson: {
+            dependencies: { [candidate.dependency]: 'latest' },
+            scripts: { build: 'build' },
+          },
+        }),
+      ).toMatchObject({
+        framework: candidate.framework,
+        displayName: candidate.displayName,
+        runtime: 'worker',
+        ready: true,
+        deployCommand: 'npx wrangler deploy',
+      });
+    }
+  });
+
+  it('detects static site generators with their build output directories', () => {
+    expect(
+      detectFramework({
+        files: ['package.json'],
+        packageJson: {
+          dependencies: { '@docusaurus/core': '^3' },
+          scripts: { build: 'docusaurus build' },
+        },
+      }),
+    ).toMatchObject({ framework: 'docusaurus', runtime: 'static', outputDirectory: 'build' });
+
+    expect(
+      detectFramework({
+        files: ['package.json'],
+        packageJson: {
+          devDependencies: { vitepress: '^1' },
+          scripts: { 'docs:build': 'vitepress build docs' },
+        },
+      }),
+    ).toMatchObject({
+      framework: 'vitepress',
+      runtime: 'static',
+      outputDirectory: '.vitepress/dist',
+      buildCommand: 'npm run docs:build',
+    });
+
+    expect(
+      detectFramework({
+        files: ['package.json'],
+        packageJson: { dependencies: { gatsby: '^5' }, scripts: { build: 'gatsby build' } },
+      }),
+    ).toMatchObject({ framework: 'gatsby', runtime: 'static', outputDirectory: 'public' });
+  });
+
+  it('detects Cloudflare Python Workers', () => {
+    expect(
+      detectFramework({
+        files: ['main.py', 'requirements.txt', 'wrangler.jsonc'],
+      }),
+    ).toMatchObject({
+      framework: 'python',
+      runtime: 'worker',
+      ready: true,
+      buildCommand: 'pip install -r requirements.txt',
+      deployCommand: 'npx wrangler deploy',
+    });
+  });
 });

@@ -603,6 +603,7 @@ export class Repository {
       buildTriggerId: string;
       previewBuildTriggerId: string;
       workerUrl: string;
+      adopted?: boolean;
     },
   ): Promise<CreatedProject> {
     const now = new Date().toISOString();
@@ -687,7 +688,11 @@ export class Repository {
                   `workerdeck-${input.slug}`,
                   `workerdeck-${input.slug}`,
                   `workerdeck:${projectId}:${environmentId}:worker`,
-                  JSON.stringify({ managed: true, source: 'github' }),
+                  JSON.stringify({
+                    managed: true,
+                    source: 'github',
+                    ...(buildTarget.adopted ? { adopted: true } : {}),
+                  }),
                   now,
                 ),
               this.db

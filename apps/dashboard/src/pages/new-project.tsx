@@ -211,6 +211,7 @@ export function NewProjectPage(): React.JSX.Element {
       outputDirectory: (data.get('outputDirectory') as string | null) || null,
       buildCommand: data.get('buildCommand'),
       deployCommand: data.get('deployCommand'),
+      adoptExistingWorker: data.get('adoptExistingWorker') === 'on',
       ...(provider === 'github' && selectedRepository
         ? {
             repositoryProvider: 'github',
@@ -616,6 +617,10 @@ export function NewProjectPage(): React.JSX.Element {
                 <span>{warning}</span>
               </div>
             ))}
+            <label className="checkbox-row">
+              <input name="adoptExistingWorker" type="checkbox" />
+              <span>Attach to an existing Cloudflare Worker with the same name</span>
+            </label>
             <div className="compatibility-row">
               <Check size={16} />
               <span>

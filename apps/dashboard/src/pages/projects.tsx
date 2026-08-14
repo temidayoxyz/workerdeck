@@ -2,7 +2,8 @@ import type { DashboardSummary } from '@workerdeck/contracts';
 import { AlertCircle, Github, Rocket } from '../components/icon';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { relativeTime, titleCase } from '../lib/format';
+import { frameworkLabel } from '../lib/framework-label';
+import { relativeTime } from '../lib/format';
 import { projectReleaseState } from '../lib/project-release';
 
 export function ProjectsPage({
@@ -77,7 +78,7 @@ export function ProjectsPage({
                     <Github size={14} />
                     {project.repositoryOwner}/{project.repositoryName}
                   </span>
-                  <span>{titleCase(project.framework)}</span>
+                  <span>{frameworkLabel(project.framework)}</span>
                 </div>
                 <div className="project-card-footer">
                   <span>Updated {relativeTime(project.updatedAt)}</span>

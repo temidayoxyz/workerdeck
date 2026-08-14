@@ -15,6 +15,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { DeploymentRail } from '../components/deployment-rail';
 import { DeploymentStatus } from '../components/status';
 import { relativeTime, shortSha, titleCase } from '../lib/format';
+import { frameworkLabel } from '../lib/framework-label';
 import { greetingFor } from '../lib/greeting';
 import { projectReleaseState } from '../lib/project-release';
 
@@ -284,7 +285,7 @@ export function OverviewPage({
                       </span>
                     </span>
                     <span>
-                      <span className="framework-label">{titleCase(project.framework)}</span>
+                      <span className="framework-label">{frameworkLabel(project.framework)}</span>
                     </span>
                     <span className="production-link">
                       {release.label === 'Live' ? (

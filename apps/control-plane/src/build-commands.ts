@@ -1,7 +1,9 @@
+import type { Framework } from '@workerdeck/contracts';
+
 export const workerNameBuildVariable = 'WRANGLER_CI_OVERRIDE_NAME';
 export const managedCompatibilityDate = '2026-08-12';
 
-type ManagedFramework = 'static' | 'vite' | 'hono' | 'astro' | 'next' | 'unknown';
+type ManagedFramework = Framework;
 
 const openNextIdentitySetup =
   `node -e "p=require('./package.json');p.name=process.env.${workerNameBuildVariable};` +
@@ -62,14 +64,22 @@ export function managedDeployCommand(
     .replace(/\bwrangler\s+deploy\b/, `wrangler ${preview ? 'versions upload' : 'deploy'}`)
     .replace(/\s+/g, ' ')
     .trim();
-  if (framework === 'vite' || framework === 'static') {
+  const staticDirectory: Partial<Record<Framework, string>> = {
+    vite: 'dist',
+    static: '.',
+    docusaurus: 'build',
+    vitepress: '.vitepress/dist',
+    gatsby: 'public',
+  };
+  const defaultDirectory = staticDirectory[framework];
+  if (defaultDirectory !== undefined) {
     const assetsMatch = managed.match(/(?:^|\s)--assets(?:=|\s+)(?:"([^"]*)"|'([^']*)'|(\S+))/);
     const directory =
       outputDirectory?.trim() ||
       assetsMatch?.[1] ||
       assetsMatch?.[2] ||
       assetsMatch?.[3] ||
-      (framework === 'static' ? '.' : 'dist');
+      defaultDirectory;
     const base = managed
       .replace(/(?:^|\s)node\s+-e\s+"[^"]*workerdeck\.assets\.jsonc[^"]*"\s*&&/g, '')
       .replace(/\s+--config(?:=|\s+)(?:"[^"]*"|'[^']*'|\S+)/g, '')

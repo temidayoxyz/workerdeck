@@ -46,6 +46,7 @@ import {
   upsertEnvironmentVariable,
 } from '../lib/api';
 import { relativeTime, shortSha, titleCase } from '../lib/format';
+import { frameworkLabel } from '../lib/framework-label';
 import { projectReleaseState } from '../lib/project-release';
 
 export function ProjectPage({
@@ -156,7 +157,7 @@ export function ProjectPage({
             </div>
             <div>
               <dt>Framework</dt>
-              <dd>{titleCase(project.framework)}</dd>
+              <dd>{frameworkLabel(project.framework)}</dd>
             </div>
             <div>
               <dt>Worker</dt>

@@ -650,11 +650,12 @@ app.post('/api/v1/projects', async (context) => {
     const client = cloudflareClient(context);
     const workerName = `workerdeck-${parsed.data.slug}`;
     const existingWorker = (await client.listWorkers()).find((worker) => worker.id === workerName);
-    if (existingWorker) {
+    const adoptedWorker = existingWorker && parsed.data.adoptExistingWorker ? existingWorker : null;
+    if (existingWorker && !adoptedWorker) {
       throw new AppError(
         409,
         'WORKER_NAME_CONFLICT',
-        `A Cloudflare Worker named ${workerName} already exists and is not owned by this project.`,
+        `A Cloudflare Worker named ${workerName} already exists and is not owned by this project. Enable "adopt existing Worker" to attach it instead of creating a duplicate.`,
       );
     }
     const buildToken = await requireBuildToken(context, client);
@@ -681,12 +682,16 @@ app.post('/api/v1/projects', async (context) => {
       parsed.data.outputDirectory,
     );
     try {
-      const worker = await client.bootstrapWorker(workerName, '2026-08-12');
-      workerCreated = true;
-      await client.enableWorkerSubdomain(workerName);
+      const workerTag = adoptedWorker
+        ? adoptedWorker.tag
+        : (await client.bootstrapWorker(workerName, '2026-08-12')).tag;
+      if (!adoptedWorker) {
+        workerCreated = true;
+        await client.enableWorkerSubdomain(workerName);
+      }
       const workersSubdomain = await client.getWorkersSubdomain();
       const productionTrigger = await client.createBuildTrigger({
-        workerTag: worker.tag,
+        workerTag,
         repositoryConnectionId: connection.id,
         buildTokenId: buildToken.id,
         name: 'WorkerDeck production',
@@ -704,7 +709,7 @@ app.post('/api/v1/projects', async (context) => {
         false,
       );
       const previewTrigger = await client.createBuildTrigger({
-        workerTag: worker.tag,
+        workerTag,
         repositoryConnectionId: connection.id,
         buildTokenId: buildToken.id,
         name: 'WorkerDeck previews',
@@ -726,10 +731,11 @@ app.post('/api/v1/projects', async (context) => {
         context.get('actor'),
         context.get('requestId'),
         {
-          workerTag: worker.tag,
+          workerTag,
           buildTriggerId: productionTrigger.id,
           previewBuildTriggerId: previewTrigger.id,
           workerUrl: `https://${workerName}.${workersSubdomain}.workers.dev`,
+          adopted: Boolean(adoptedWorker),
         },
       );
       try {

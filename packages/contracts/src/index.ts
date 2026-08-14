@@ -19,7 +19,25 @@ export const deploymentStatusSchema = z.enum([
   'rolled_back',
 ]);
 export const environmentKindSchema = z.enum(['production', 'preview', 'development']);
-export const frameworkSchema = z.enum(['static', 'vite', 'hono', 'astro', 'next', 'unknown']);
+export const frameworkSchema = z.enum([
+  'static',
+  'vite',
+  'hono',
+  'astro',
+  'next',
+  'sveltekit',
+  'remix',
+  'nuxt',
+  'qwik',
+  'nitro',
+  'react-router',
+  'analog',
+  'docusaurus',
+  'vitepress',
+  'gatsby',
+  'python',
+  'unknown',
+]);
 export const resourceKindSchema = z.enum([
   'worker',
   'd1',
@@ -162,6 +180,7 @@ export const createProjectInputSchema = z
       .default('/'),
     buildCommand: z.string().trim().min(1).max(500).default('npm run build'),
     deployCommand: z.string().trim().min(1).max(500).default('npx wrangler deploy'),
+    adoptExistingWorker: z.boolean().default(false),
   })
   .superRefine((input, context) => {
     if (!input.repositoryProvider) return;

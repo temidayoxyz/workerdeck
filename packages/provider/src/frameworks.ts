@@ -32,10 +32,46 @@ const wrangler = (manager: FrameworkDetection['packageManager']): string => {
 
 const noBuildStep = 'echo "No build step required"';
 
+interface FrameworkSpec {
+  framework: FrameworkDetection['framework'];
+  displayName: string;
+  evidence: string[];
+  buildCommand: string;
+  outputDirectory: string | null;
+  runtime: 'worker' | 'static';
+  ready: boolean;
+  warnings: string[];
+}
+
+function adapterWorkerSpec(
+  input: FrameworkDetectionInput,
+  manager: FrameworkDetection['packageManager'],
+  spec: Omit<FrameworkSpec, 'buildCommand' | 'outputDirectory' | 'runtime' | 'ready' | 'warnings'>,
+): FrameworkSpec {
+  const buildScript = input.packageJson?.scripts?.build;
+  const hasWranglerConfig = hasFile(input, /(^|\/)wrangler\.(?:jsonc?|toml)$/);
+  return {
+    ...spec,
+    buildCommand: buildScript ? packageRun(manager, 'build') : noBuildStep,
+    outputDirectory: null,
+    runtime: 'worker',
+    ready: Boolean(buildScript),
+    warnings: [
+      ...(!buildScript
+        ? [`Add a ${spec.displayName} build script before the first deployment.`]
+        : []),
+      ...(!hasWranglerConfig
+        ? [
+            'The Cloudflare adapter should generate a Wrangler configuration during the first build.',
+          ]
+        : []),
+    ],
+  };
+}
+
 export function detectFramework(input: FrameworkDetectionInput): FrameworkDetection {
   const manager = packageManager(input);
   const buildScript = input.packageJson?.scripts?.build;
-  const buildCommand = buildScript ? packageRun(manager, 'build') : '';
   const deployCommand = `${wrangler(manager)} deploy`;
   const hasWranglerConfig = hasFile(input, /(^|\/)wrangler\.(?:jsonc?|toml)$/);
 
@@ -46,7 +82,7 @@ export function detectFramework(input: FrameworkDetectionInput): FrameworkDetect
       displayName: 'Next.js',
       confidence: 'high',
       evidence: ['Found the `next` package.'],
-      buildCommand: buildCommand || noBuildStep,
+      buildCommand: buildScript ? packageRun(manager, 'build') : noBuildStep,
       outputDirectory: '.open-next',
       runtime: 'worker',
       deployCommand,
@@ -65,6 +101,72 @@ export function detectFramework(input: FrameworkDetectionInput): FrameworkDetect
     };
   }
 
+  if (hasDependency(input, 'nuxt') || hasDependency(input, '@nuxt/kit')) {
+    const spec = adapterWorkerSpec(input, manager, {
+      framework: 'nuxt',
+      displayName: 'Nuxt',
+      evidence: ['Found a Nuxt dependency.'],
+    });
+    return { ...spec, confidence: 'high', deployCommand, packageManager: manager };
+  }
+
+  if (hasDependency(input, '@sveltejs/kit')) {
+    const spec = adapterWorkerSpec(input, manager, {
+      framework: 'sveltekit',
+      displayName: 'SvelteKit',
+      evidence: ['Found @sveltejs/kit.'],
+    });
+    return { ...spec, confidence: 'high', deployCommand, packageManager: manager };
+  }
+
+  if (hasDependency(input, '@remix-run/dev')) {
+    const spec = adapterWorkerSpec(input, manager, {
+      framework: 'remix',
+      displayName: 'Remix',
+      evidence: ['Found @remix-run/dev.'],
+    });
+    return { ...spec, confidence: 'high', deployCommand, packageManager: manager };
+  }
+
+  if (hasDependency(input, '@builder.io/qwik') || hasDependency(input, '@builder.io/qwik-city')) {
+    const spec = adapterWorkerSpec(input, manager, {
+      framework: 'qwik',
+      displayName: 'Qwik City',
+      evidence: ['Found Qwik and Qwik City dependencies.'],
+    });
+    return { ...spec, confidence: 'high', deployCommand, packageManager: manager };
+  }
+
+  if (
+    hasDependency(input, '@react-router/dev') ||
+    hasFile(input, /(^|\/)react-router\.config\.(?:[cm]?[jt]s)$/)
+  ) {
+    const spec = adapterWorkerSpec(input, manager, {
+      framework: 'react-router',
+      displayName: 'React Router',
+      evidence: ['Found the React Router framework configuration.'],
+    });
+    return { ...spec, confidence: 'high', deployCommand, packageManager: manager };
+  }
+
+  if (hasDependency(input, '@analogjs/platform')) {
+    const spec = adapterWorkerSpec(input, manager, {
+      framework: 'analog',
+      displayName: 'Analog',
+      evidence: ['Found the Analog Angular metaframework.'],
+    });
+    return { ...spec, confidence: 'high', deployCommand, packageManager: manager };
+  }
+
+  if (hasDependency(input, 'nitropack') || hasDependency(input, 'nitro')) {
+    const spec = adapterWorkerSpec(input, manager, {
+      framework: 'nitro',
+      displayName: 'Nitro',
+      evidence: ['Found the Nitro server toolkit.'],
+    });
+    return { ...spec, confidence: 'high', deployCommand, packageManager: manager };
+  }
+
   if (hasDependency(input, 'astro')) {
     const ready = Boolean(buildScript);
     return {
@@ -72,7 +174,7 @@ export function detectFramework(input: FrameworkDetectionInput): FrameworkDetect
       displayName: 'Astro',
       confidence: 'high',
       evidence: ['Found the `astro` package.'],
-      buildCommand: buildCommand || noBuildStep,
+      buildCommand: buildScript ? packageRun(manager, 'build') : noBuildStep,
       outputDirectory: 'dist',
       runtime: 'worker',
       deployCommand,
@@ -89,6 +191,62 @@ export function detectFramework(input: FrameworkDetectionInput): FrameworkDetect
     };
   }
 
+  if (hasDependency(input, '@docusaurus/core')) {
+    const ready = Boolean(buildScript);
+    return {
+      framework: 'docusaurus',
+      displayName: 'Docusaurus',
+      confidence: 'high',
+      evidence: ['Found @docusaurus/core.'],
+      buildCommand: buildScript ? packageRun(manager, 'build') : noBuildStep,
+      outputDirectory: 'build',
+      runtime: 'static',
+      deployCommand,
+      packageManager: manager,
+      ready,
+      warnings: !ready ? ['Add a Docusaurus build script before the first deployment.'] : [],
+    };
+  }
+
+  if (hasDependency(input, 'vitepress')) {
+    const docsBuildScript = input.packageJson?.scripts?.['docs:build'];
+    const ready = Boolean(buildScript || docsBuildScript);
+    return {
+      framework: 'vitepress',
+      displayName: 'VitePress',
+      confidence: 'high',
+      evidence: ['Found the VitePress dependency.'],
+      buildCommand: docsBuildScript
+        ? packageRun(manager, 'docs:build')
+        : buildScript
+          ? packageRun(manager, 'build')
+          : noBuildStep,
+      outputDirectory: '.vitepress/dist',
+      runtime: 'static',
+      deployCommand,
+      packageManager: manager,
+      ready,
+      warnings: !ready ? ['Add a VitePress build script before the first deployment.'] : [],
+    };
+  }
+
+  if (hasDependency(input, 'gatsby')) {
+    const ready = Boolean(buildScript);
+    return {
+      framework: 'gatsby',
+      displayName: 'Gatsby',
+      confidence: 'high',
+      evidence: ['Found the Gatsby dependency.'],
+      buildCommand: buildScript ? packageRun(manager, 'build') : noBuildStep,
+      outputDirectory: 'public',
+      runtime: 'static',
+      deployCommand,
+      packageManager: manager,
+      ready,
+      warnings: !ready ? ['Add a Gatsby build script before the first deployment.'] : [],
+    };
+  }
+
   if (hasDependency(input, 'hono')) {
     const ready = hasWranglerConfig;
     return {
@@ -96,13 +254,34 @@ export function detectFramework(input: FrameworkDetectionInput): FrameworkDetect
       displayName: 'Hono',
       confidence: 'high',
       evidence: ['Found the `hono` package.'],
-      buildCommand: buildCommand || noBuildStep,
+      buildCommand: buildScript ? packageRun(manager, 'build') : noBuildStep,
       outputDirectory: null,
       runtime: 'worker',
       deployCommand,
       packageManager: manager,
       ready,
       warnings: ready ? [] : ['Add a Wrangler configuration with the Worker entry point.'],
+    };
+  }
+
+  const hasPythonEntry = hasFile(input, /(^|\/)(?:main|entry)\.py$/);
+  const hasRequirements = hasFile(input, /(^|\/)requirements\.txt$/);
+  if (hasPythonEntry || hasRequirements) {
+    const ready = Boolean(hasWranglerConfig || hasPythonEntry);
+    return {
+      framework: 'python',
+      displayName: 'Python',
+      confidence: 'medium',
+      evidence: ['Found a Python entry point or requirements.txt.'],
+      buildCommand: hasRequirements ? 'pip install -r requirements.txt' : noBuildStep,
+      outputDirectory: null,
+      runtime: 'worker',
+      deployCommand,
+      packageManager: manager,
+      ready,
+      warnings: ready
+        ? []
+        : ['Add a Wrangler configuration with the Python entry point before deploying.'],
     };
   }
 
@@ -114,7 +293,7 @@ export function detectFramework(input: FrameworkDetectionInput): FrameworkDetect
       displayName: viteFramework,
       confidence: 'high',
       evidence: ['Found a Vite dependency or configuration file.'],
-      buildCommand: buildCommand || noBuildStep,
+      buildCommand: buildScript ? packageRun(manager, 'build') : noBuildStep,
       outputDirectory: 'dist',
       runtime: 'static',
       deployCommand,
