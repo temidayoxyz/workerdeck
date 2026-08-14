@@ -53,8 +53,12 @@ export function DeploymentsPage({
           );
           return (
             <div className="history-row" key={deployment.id}>
-              <span>
+              <span className="status-cell">
                 <DeploymentStatus status={deployment.status} />
+                {summary.environments.find((candidate) => candidate.id === deployment.environmentId)
+                  ?.kind === 'preview' ? (
+                  <span className="environment-badge">Preview</span>
+                ) : null}
               </span>
               <span className="history-commit">
                 <strong>{project?.name ?? 'Unknown project'}</strong>

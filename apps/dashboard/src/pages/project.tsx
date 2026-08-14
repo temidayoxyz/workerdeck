@@ -316,7 +316,13 @@ export function ProjectDeploymentsPage({
         </div>
         {deployments.map((deployment) => (
           <div className="data-row" key={deployment.id}>
-            <DeploymentStatus status={deployment.status} />
+            <span className="status-cell">
+              <DeploymentStatus status={deployment.status} />
+              {summary?.environments.find((candidate) => candidate.id === deployment.environmentId)
+                ?.kind === 'preview' ? (
+                <span className="environment-badge">Preview</span>
+              ) : null}
+            </span>
             <code>{deployment.workerVersionId ?? '—'}</code>
             <span className="commit-cell">
               <GitCommitHorizontal size={14} />

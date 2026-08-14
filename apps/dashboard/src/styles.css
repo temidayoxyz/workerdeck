@@ -3297,6 +3297,11 @@ select:focus-visible {
 .traffic-empty {
   padding: 4px 18px 16px;
 }
+.status-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .cron-form {
   display: flex;
   gap: 8px;
