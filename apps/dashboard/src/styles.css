@@ -3200,6 +3200,16 @@ select:focus-visible {
 .domain-attach-form input:focus {
   border-color: var(--cyan);
 }
+.domain-attach-form select {
+  height: 36px;
+  padding: 0 10px;
+  color: var(--ink);
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  outline: 0;
+  font-size: 9px;
+}
 .domain-list {
   display: flex;
   flex-direction: column;
@@ -3222,6 +3232,11 @@ select:focus-visible {
 }
 .domain-list small {
   color: var(--ink-faint);
+}
+.domain-row-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .domain-route-row {
   display: grid;

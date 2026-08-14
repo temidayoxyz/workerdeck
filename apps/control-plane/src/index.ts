@@ -304,6 +304,7 @@ app.post('/api/v1/projects/:projectId/environments/:environmentId/domains', asyn
       kind: 'domain',
       cloudflareId: domain.id,
       name: domain.hostname,
+      configuration: { certificateId: domain.certificateId },
       actor: context.get('actor'),
       requestId: context.get('requestId'),
     });
@@ -333,6 +334,26 @@ app.post('/api/v1/projects/:projectId/environments/:environmentId/domains', asyn
   }
   return context.json({ data: domain, requestId: context.get('requestId') }, 201);
 });
+
+app.delete(
+  '/api/v1/projects/:projectId/environments/:environmentId/domains/:domainId',
+  async (context) => {
+    const repository = new Repository(context.env.DB);
+    const target = await repository.getDeploymentTarget(
+      context.req.param('projectId'),
+      context.req.param('environmentId'),
+    );
+    const domainId = context.req.param('domainId');
+    const domains = await cloudflareClient(context).listWorkerDomains(target.workerName);
+    const domain = domains.find((candidate) => candidate.id === domainId);
+    if (!domain) {
+      throw new AppError(404, 'DOMAIN_NOT_FOUND', 'This domain is not attached to the Worker.');
+    }
+    await cloudflareClient(context).detachWorkerDomain(domain.id);
+    await repository.removeDomainRecord(domain.id, target.environmentId);
+    return context.json({ data: { deleted: true }, requestId: context.get('requestId') });
+  },
+);
 
 app.get('/api/v1/git/github/connection', async (context) => {
   const installations = await new Repository(context.env.DB).listGitHubInstallations();
@@ -1435,6 +1456,15 @@ async function syncProviderBuilds(env: AppEnv['Bindings']): Promise<void> {
           );
         }
       }
+      const workerDomains = await providerSyncStep(
+        'list Worker domains',
+        client.listWorkerDomains(target.workerName),
+      );
+      await repository.syncProviderDomains({
+        projectId: target.projectId,
+        environmentId: target.productionEnvironmentId,
+        domains: workerDomains,
+      });
       const buildsByVersion = await client.getBuildsByVersionIds(
         versions.map((version) => version.id),
       );

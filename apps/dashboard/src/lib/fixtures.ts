@@ -114,6 +114,18 @@ export const demoSummary: DashboardSummary = {
       createdAt: minutesAgo(45),
     },
   ],
+  domains: [
+    {
+      id: 'f3d2d1f0-1a2b-4c3d-9e8f-7a6b5c4d3e2f',
+      cloudflareId: 'domain-demo',
+      hostname: 'northstar.example.com',
+      projectId: 'f7a042f3-d7e7-43a5-8969-7b7cda7d1c88',
+      environmentId: '38c13ea5-7022-4b58-8ebc-29c7759aa2aa',
+      environmentKind: 'production',
+      certificateId: 'certificate-demo',
+      source: 'synced',
+    },
+  ],
   resourceCounts: { worker: 3, d1: 2, kv: 1, r2: 2, domain: 3, queue: 1, workflow: 0 },
   sync: { status: 'ok', message: null, checkedAt: minutesAgo(2), failures: [] },
 };

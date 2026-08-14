@@ -197,21 +197,25 @@ export class Repository {
   constructor(private readonly db: D1Database) {}
 
   async dashboard(account: DashboardSummary['account']): Promise<DashboardSummary> {
-    const [projects, environments, deployments, resourceCounts, health] = await Promise.all([
-      this.db.prepare('SELECT * FROM projects ORDER BY updated_at DESC LIMIT 50').all<ProjectRow>(),
-      this.db
-        .prepare('SELECT * FROM environments ORDER BY updated_at DESC LIMIT 100')
-        .all<EnvironmentRow>(),
-      this.db
-        .prepare('SELECT * FROM deployments ORDER BY created_at DESC LIMIT 30')
-        .all<DeploymentRow>(),
-      this.db
-        .prepare(
-          'SELECT kind, COUNT(*) AS count FROM managed_resources WHERE deleted_at IS NULL GROUP BY kind',
-        )
-        .all<{ kind: ResourceKind; count: number }>(),
-      this.buildSyncHealth(),
-    ]);
+    const [projects, environments, deployments, resourceCounts, domains, health] =
+      await Promise.all([
+        this.db
+          .prepare('SELECT * FROM projects ORDER BY updated_at DESC LIMIT 50')
+          .all<ProjectRow>(),
+        this.db
+          .prepare('SELECT * FROM environments ORDER BY updated_at DESC LIMIT 100')
+          .all<EnvironmentRow>(),
+        this.db
+          .prepare('SELECT * FROM deployments ORDER BY created_at DESC LIMIT 30')
+          .all<DeploymentRow>(),
+        this.db
+          .prepare(
+            'SELECT kind, COUNT(*) AS count FROM managed_resources WHERE deleted_at IS NULL GROUP BY kind',
+          )
+          .all<{ kind: ResourceKind; count: number }>(),
+        this.listSyncedDomains(),
+        this.buildSyncHealth(),
+      ]);
 
     const counts: DashboardSummary['resourceCounts'] = {
       worker: 0,
@@ -228,6 +232,7 @@ export class Repository {
       projects: projects.results.map(toProject),
       environments: environments.results.map(toEnvironment),
       deployments: deployments.results.map(toDeployment),
+      domains,
       resourceCounts: counts,
       account,
       sync: health
@@ -538,6 +543,7 @@ export class Repository {
     kind: 'd1' | 'kv' | 'r2' | 'domain';
     cloudflareId: string;
     name: string;
+    configuration?: Record<string, unknown>;
     actor: string;
     requestId: string;
   }): Promise<ManagedResource> {
@@ -557,7 +563,7 @@ export class Repository {
           `INSERT INTO managed_resources (
             id, project_id, environment_id, kind, cloudflare_id, name, ownership_tag,
             configuration_json, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, '{}', ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           id,
@@ -567,6 +573,7 @@ export class Repository {
           input.cloudflareId,
           input.name,
           ownershipTag,
+          JSON.stringify(input.configuration ?? {}),
           now,
         ),
       this.db
@@ -592,6 +599,123 @@ export class Repository {
       throw new AppError(500, 'RESOURCE_RECORD_FAILED', 'The resource ownership record was lost.');
     }
     return toManagedResource(row);
+  }
+
+  async syncProviderDomains(input: {
+    projectId: string;
+    environmentId: string;
+    domains: WorkerDomain[];
+  }): Promise<void> {
+    const now = new Date().toISOString();
+    const existing = await this.db
+      .prepare(
+        "SELECT id, cloudflare_id FROM managed_resources WHERE kind = 'domain' AND environment_id = ? AND deleted_at IS NULL",
+      )
+      .bind(input.environmentId)
+      .all<{ id: string; cloudflare_id: string }>();
+    const existingByCloudflareId = new Map(
+      existing.results.map((row) => [row.cloudflare_id, row.id]),
+    );
+    const statements: D1PreparedStatement[] = [];
+    for (const domain of input.domains) {
+      const existingId = existingByCloudflareId.get(domain.id);
+      const configuration = JSON.stringify({
+        certificateId: domain.certificateId,
+        source: 'synced',
+      });
+      if (existingId) {
+        statements.push(
+          this.db
+            .prepare(
+              `UPDATE managed_resources SET name = ?, configuration_json = ?
+               WHERE id = ?`,
+            )
+            .bind(domain.hostname, configuration, existingId),
+        );
+      } else {
+        statements.push(
+          this.db
+            .prepare(
+              `INSERT INTO managed_resources (
+                id, project_id, environment_id, kind, cloudflare_id, name, ownership_tag,
+                configuration_json, created_at
+              ) VALUES (?, ?, ?, 'domain', ?, ?, ?, ?, ?)`,
+            )
+            .bind(
+              crypto.randomUUID(),
+              input.projectId,
+              input.environmentId,
+              domain.id,
+              domain.hostname,
+              `cloudflare-sync:${input.projectId}:${input.environmentId}:domain:${domain.id}`,
+              configuration,
+              now,
+            ),
+        );
+      }
+    }
+    const presentIds = new Set(input.domains.map((domain) => domain.id));
+    for (const row of existing.results) {
+      if (!presentIds.has(row.cloudflare_id)) {
+        statements.push(this.db.prepare('DELETE FROM managed_resources WHERE id = ?').bind(row.id));
+      }
+    }
+    if (statements.length > 0) await this.db.batch(statements);
+  }
+
+  async listSyncedDomains(): Promise<DashboardSummary['domains']> {
+    const rows = await this.db
+      .prepare(
+        `SELECT r.id, r.cloudflare_id, r.name, r.project_id, r.environment_id, r.ownership_tag,
+                r.configuration_json, e.kind AS environment_kind
+         FROM managed_resources r
+         LEFT JOIN environments e ON e.id = r.environment_id
+         WHERE r.kind = 'domain' AND r.deleted_at IS NULL
+         ORDER BY r.created_at DESC
+         LIMIT 100`,
+      )
+      .all<{
+        id: string;
+        cloudflare_id: string;
+        name: string;
+        project_id: string | null;
+        environment_id: string | null;
+        ownership_tag: string;
+        configuration_json: string;
+        environment_kind: Environment['kind'] | null;
+      }>();
+    return rows.results.map((row) => {
+      let configuration: { certificateId?: unknown; source?: unknown } = {};
+      try {
+        configuration = JSON.parse(row.configuration_json) as {
+          certificateId?: unknown;
+          source?: unknown;
+        };
+      } catch {
+        configuration = {};
+      }
+      return {
+        id: row.id,
+        cloudflareId: row.cloudflare_id,
+        hostname: row.name,
+        projectId: row.project_id,
+        environmentId: row.environment_id,
+        environmentKind: row.environment_kind,
+        certificateId:
+          typeof configuration.certificateId === 'string' ? configuration.certificateId : null,
+        source: row.ownership_tag.startsWith('workerdeck:') ? 'managed' : 'synced',
+      };
+    });
+  }
+
+  async removeDomainRecord(cloudflareId: string, environmentId: string): Promise<void> {
+    await this.db
+      .prepare(
+        `UPDATE managed_resources SET deleted_at = ?
+         WHERE kind = 'domain' AND cloudflare_id = ? AND environment_id = ? AND deleted_at IS NULL`,
+      )
+      .bind(new Date().toISOString(), cloudflareId, environmentId)
+      .run();
   }
 
   async createProject(

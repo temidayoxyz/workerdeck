@@ -79,9 +79,25 @@ export function DomainsPage({ summary }: { summary: DashboardSummary | null }): 
               </div>
             );
           })}
+          {summary?.domains.map((domain) => {
+            const project = summary.projects.find((item) => item.id === domain.projectId);
+            return (
+              <div className="data-row" key={domain.id}>
+                <strong>{domain.hostname}</strong>
+                <span>{project?.name ?? 'Unknown project'}</span>
+                <span className="environment-badge">{domain.environmentKind ?? 'Unknown'}</span>
+                <span>
+                  <LockKeyhole size={14} /> {domain.certificateId ? 'Active' : 'Provisioning'}
+                </span>
+                <span className="healthy-label">
+                  <i /> {domain.source === 'synced' ? 'Synced' : 'Managed'}
+                </span>
+              </div>
+            );
+          })}
           <div className="table-empty-row">
-            Attach custom domains from a project's Domains tab. WorkerDeck checks account-wide
-            hostname conflicts before asking Cloudflare to create DNS and TLS.
+            Custom domains attached in Cloudflare sync here automatically. WorkerDeck creates DNS
+            and TLS automatically when you add a domain from a project.
           </div>
         </section>
         <aside className="panel detail-panel">

@@ -38,6 +38,7 @@ import { NewResourceDialog } from '../components/new-resource-dialog';
 import {
   deleteEnvironmentVariable,
   attachProjectDomain,
+  detachProjectDomain,
   getBuildLogs,
   getEnvironmentVariables,
   getManagedResources,
@@ -759,9 +760,14 @@ export function ProjectDomainsPage({
 }): React.JSX.Element {
   const { projectId } = useParams();
   const project = summary?.projects.find((candidate) => candidate.id === projectId);
-  const environment = summary?.environments.find(
-    (candidate) => candidate.projectId === projectId && candidate.kind === 'production',
-  );
+  const environments =
+    summary?.environments.filter((candidate) => candidate.projectId === projectId) ?? [];
+  const productionEnvironment = environments.find((candidate) => candidate.kind === 'production');
+  const [environmentId, setEnvironmentId] = useState<string | null>(null);
+  const selectedEnvironment =
+    environments.find((candidate) => candidate.id === environmentId) ??
+    productionEnvironment ??
+    environments[0];
   const release = project
     ? projectReleaseState(project.id, summary?.environments ?? [], summary?.deployments ?? [])
     : null;
@@ -769,10 +775,14 @@ export function ProjectDomainsPage({
   const [hostname, setHostname] = useState('');
   const [domainError, setDomainError] = useState<string | null>(null);
   const [domainSubmitting, setDomainSubmitting] = useState(false);
+  const [detaching, setDetaching] = useState<string | null>(null);
   useEffect(() => {
-    if (!projectId || !environment) return;
+    if (!environmentId && productionEnvironment) setEnvironmentId(productionEnvironment.id);
+  }, [environmentId, productionEnvironment]);
+  useEffect(() => {
+    if (!projectId || !environmentId) return;
     let active = true;
-    void getProjectDomains(projectId, environment.id)
+    void getProjectDomains(projectId, environmentId)
       .then((items) => {
         if (active) setDomains(items);
       })
@@ -784,14 +794,16 @@ export function ProjectDomainsPage({
     return () => {
       active = false;
     };
-  }, [environment, projectId]);
+  }, [environmentId, projectId]);
   if (!project) return <MissingProject />;
   return (
     <div className="project-page">
       <ProjectHeader
         project={project}
-        environment={environment}
-        onDeploy={() => environment && void onDeploy(project.id, environment.id)}
+        environment={productionEnvironment}
+        onDeploy={() =>
+          productionEnvironment && void onDeploy(project.id, productionEnvironment.id)
+        }
       />
       <section className="project-section-intro">
         <div>
@@ -802,10 +814,10 @@ export function ProjectDomainsPage({
           className="domain-attach-form"
           onSubmit={(event) => {
             event.preventDefault();
-            if (!environment) return;
+            if (!selectedEnvironment) return;
             setDomainSubmitting(true);
             setDomainError(null);
-            void attachProjectDomain(project.id, environment.id, hostname)
+            void attachProjectDomain(project.id, selectedEnvironment.id, hostname)
               .then((domain) => {
                 setDomains((current) => [domain, ...current]);
                 setHostname('');
@@ -818,6 +830,17 @@ export function ProjectDomainsPage({
               .finally(() => setDomainSubmitting(false));
           }}
         >
+          <select
+            value={selectedEnvironment?.id ?? ''}
+            onChange={(event) => setEnvironmentId(event.target.value)}
+            aria-label="Environment for the custom domain"
+          >
+            {environments.map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>
+                {candidate.kind === 'production' ? 'Production' : 'Preview'}
+              </option>
+            ))}
+          </select>
           <input
             type="text"
             value={hostname}
@@ -843,12 +866,14 @@ export function ProjectDomainsPage({
             <Globe2 size={21} />
             <span>
               <strong>
-                {environment?.url ? new URL(environment.url).hostname : 'Not assigned yet'}
+                {productionEnvironment?.url
+                  ? new URL(productionEnvironment.url).hostname
+                  : 'Not assigned yet'}
               </strong>
               <small>Cloudflare-managed hostname and TLS</small>
             </span>
-            {environment?.url ? (
-              <a href={environment.url} target="_blank" rel="noreferrer">
+            {productionEnvironment?.url ? (
+              <a href={productionEnvironment.url} target="_blank" rel="noreferrer">
                 <ExternalLink size={16} />
               </a>
             ) : null}
@@ -866,7 +891,36 @@ export function ProjectDomainsPage({
               <span key={domain.id}>
                 <Globe2 size={15} />
                 <strong>{domain.hostname}</strong>
-                <small>{domain.zoneName}</small>
+                <span className="domain-row-end">
+                  <small>{domain.zoneName}</small>
+                  <button
+                    className="row-action danger-action"
+                    type="button"
+                    aria-label={`Detach ${domain.hostname}`}
+                    disabled={detaching === domain.id}
+                    onClick={() => {
+                      if (!selectedEnvironment) return;
+                      setDetaching(domain.id);
+                      setDomainError(null);
+                      void detachProjectDomain(project.id, selectedEnvironment.id, domain.id)
+                        .then(() =>
+                          setDomains((current) =>
+                            current.filter((candidate) => candidate.id !== domain.id),
+                          ),
+                        )
+                        .catch((reason: unknown) =>
+                          setDomainError(
+                            reason instanceof Error
+                              ? reason.message
+                              : 'The domain could not be detached.',
+                          ),
+                        )
+                        .finally(() => setDetaching(null));
+                    }}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </span>
               </span>
             ))}
             {domains.length === 0 ? <small>No custom domain is attached.</small> : null}

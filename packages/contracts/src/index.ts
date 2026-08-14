@@ -115,6 +115,18 @@ export const dashboardSummarySchema = z.object({
   projects: z.array(projectSchema),
   deployments: z.array(deploymentSchema),
   environments: z.array(environmentSchema),
+  domains: z.array(
+    z.object({
+      id: z.uuid(),
+      cloudflareId: z.string().min(1).max(255),
+      hostname: z.string().min(1).max(253),
+      projectId: z.uuid().nullable(),
+      environmentId: z.uuid().nullable(),
+      environmentKind: environmentKindSchema.nullable(),
+      certificateId: z.string().nullable(),
+      source: z.enum(['managed', 'synced']),
+    }),
+  ),
   resourceCounts: z.record(resourceKindSchema, z.number().int().nonnegative()),
   account: z.object({
     id: z.string().nullable(),

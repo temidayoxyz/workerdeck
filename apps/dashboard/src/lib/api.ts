@@ -369,6 +369,22 @@ export async function attachProjectDomain(
   );
 }
 
+export async function detachProjectDomain(
+  projectId: string,
+  environmentId: string,
+  domainId: string,
+): Promise<void> {
+  if (isDemoMode()) return;
+  await request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/domains/${encodeURIComponent(domainId)}`,
+    { method: 'DELETE' },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return envelope.data;
+    },
+  );
+}
+
 export async function rollbackDeployment(deploymentId: string): Promise<Deployment> {
   if (isDemoMode()) {
     const target = demoSummary.deployments.find((deployment) => deployment.id === deploymentId);
