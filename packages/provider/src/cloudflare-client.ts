@@ -926,6 +926,45 @@ export class CloudflareClient {
     );
   }
 
+  async listCronTriggers(
+    scriptName: string,
+  ): Promise<Array<{ cron: string; createdOn: string; modifiedOn: string }>> {
+    const accountId = this.#requireAccountId();
+    const schema = z
+      .object({
+        schedules: z.array(
+          z
+            .object({
+              cron: z.string(),
+              created_on: z.string(),
+              modified_on: z.string(),
+            })
+            .transform((schedule) => ({
+              cron: schedule.cron,
+              createdOn: schedule.created_on,
+              modifiedOn: schedule.modified_on,
+            })),
+        ),
+      })
+      .transform((result) => result.schedules);
+    return this.#request(
+      `/accounts/${accountId}/workers/scripts/${encodeURIComponent(scriptName)}/schedules`,
+      schema,
+    );
+  }
+
+  async setCronTriggers(scriptName: string, crons: string[]): Promise<void> {
+    const accountId = this.#requireAccountId();
+    await this.#request(
+      `/accounts/${accountId}/workers/scripts/${encodeURIComponent(scriptName)}/schedules`,
+      z.unknown(),
+      {
+        method: 'PUT',
+        body: JSON.stringify(crons.map((cron) => ({ cron }))),
+      },
+    );
+  }
+
   async #request<T>(path: string, resultSchema: z.ZodType<T>, init: RequestInit = {}): Promise<T> {
     const headers = new Headers(init.headers);
     headers.set('Authorization', `Bearer ${this.#token}`);

@@ -5,6 +5,7 @@ import {
   createResourceInputSchema,
   environmentVariableKeySchema,
   rollbackDeploymentInputSchema,
+  setCronSchedulesInputSchema,
   setTrafficInputSchema,
   repositoryInspectionSchema,
   upsertEnvironmentVariableInputSchema,
@@ -1339,6 +1340,45 @@ app.put('/api/v1/projects/:projectId/environments/:environmentId/subdomain', asy
     data: { enabled: parsed.data.enabled },
     requestId: context.get('requestId'),
   });
+});
+
+app.get('/api/v1/projects/:projectId/environments/:environmentId/cron', async (context) => {
+  const target = await new Repository(context.env.DB).getDeploymentTarget(
+    context.req.param('projectId'),
+    context.req.param('environmentId'),
+  );
+  const schedules = await cloudflareClient(context).listCronTriggers(target.workerName);
+  return context.json({ data: schedules, requestId: context.get('requestId') });
+});
+
+app.put('/api/v1/projects/:projectId/environments/:environmentId/cron', async (context) => {
+  const parsed = setCronSchedulesInputSchema.safeParse(await context.req.json().catch(() => null));
+  if (!parsed.success) {
+    throw new AppError(
+      422,
+      'INVALID_CRON_SCHEDULES',
+      'Use up to five valid cron expressions.',
+      parsed.error.flatten(),
+    );
+  }
+  const repository = new Repository(context.env.DB);
+  const target = await repository.getDeploymentTarget(
+    context.req.param('projectId'),
+    context.req.param('environmentId'),
+  );
+  await cloudflareClient(context).setCronTriggers(target.workerName, parsed.data.schedules);
+  const schedules = await cloudflareClient(context).listCronTriggers(target.workerName);
+  await repository.recordEnvironmentVariableAudit({
+    action: 'updated',
+    projectId: target.projectId,
+    environmentId: target.environmentId,
+    key: 'cron_schedules',
+    target: 'build',
+    secret: false,
+    actor: context.get('actor'),
+    requestId: context.get('requestId'),
+  });
+  return context.json({ data: schedules, requestId: context.get('requestId') });
 });
 
 app.get('/api/v1/cloudflare/connection', async (context) => {

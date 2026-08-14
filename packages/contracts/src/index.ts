@@ -275,6 +275,19 @@ export const setTrafficInputSchema = z
     }
   });
 
+export const cronScheduleSchema = z.object({
+  cron: z.string().trim().min(3).max(100),
+  createdOn: isoDateSchema.nullable(),
+  modifiedOn: isoDateSchema.nullable(),
+});
+
+export const setCronSchedulesInputSchema = z.object({
+  schedules: z
+    .array(z.string().trim().min(3).max(100))
+    .max(5)
+    .transform((schedules) => [...new Set(schedules)]),
+});
+
 export const environmentVariableKeySchema = z
   .string()
   .trim()
@@ -459,6 +472,7 @@ export type WorkerDomain = z.infer<typeof domainSchema>;
 export type AttachDomainInput = z.infer<typeof attachDomainInputSchema>;
 export type RollbackDeploymentInput = z.infer<typeof rollbackDeploymentInputSchema>;
 export type SetTrafficInput = z.infer<typeof setTrafficInputSchema>;
+export type CronSchedule = z.infer<typeof cronScheduleSchema>;
 export type EnvironmentVariable = z.infer<typeof environmentVariableSchema>;
 export type EnvironmentVariables = z.infer<typeof environmentVariablesSchema>;
 export type EnvironmentVariableTarget = z.infer<typeof environmentVariableTargetSchema>;

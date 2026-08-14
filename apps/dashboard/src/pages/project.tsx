@@ -42,6 +42,8 @@ import {
   setSystemDomainEnabled,
   getProjectTraffic,
   setProjectTraffic,
+  getCronSchedules,
+  setCronSchedules,
   getBuildLogs,
   getEnvironmentVariables,
   getManagedResources,
@@ -1281,6 +1283,112 @@ export function ProjectSettingsPage({
           </div>
         </form>
       </dialog>
+    </div>
+  );
+}
+
+export function ProjectCronPage({
+  summary,
+  onDeploy,
+}: {
+  summary: DashboardSummary | null;
+  onDeploy: (projectId: string, environmentId: string) => Promise<void>;
+}): React.JSX.Element {
+  const { projectId } = useParams();
+  const project = summary?.projects.find((candidate) => candidate.id === projectId);
+  const environment = summary?.environments.find(
+    (candidate) => candidate.projectId === projectId && candidate.kind === 'production',
+  );
+  const [schedules, setSchedules] = useState<string[]>([]);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!projectId || !environment) return;
+    let active = true;
+    void getCronSchedules(projectId, environment.id)
+      .then((items) => {
+        if (active) setSchedules(items.map((item) => item.cron));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [environment, projectId]);
+  if (!project) return <MissingProject />;
+  const save = (next: string[]) => {
+    if (!environment) return;
+    setSaving(true);
+    setError(null);
+    void setCronSchedules(project.id, environment.id, next)
+      .then(() => setSchedules(next))
+      .catch((reason: unknown) =>
+        setError(reason instanceof Error ? reason.message : 'Cron schedules could not be saved.'),
+      )
+      .finally(() => setSaving(false));
+  };
+  return (
+    <div className="project-page">
+      <ProjectHeader
+        project={project}
+        environment={environment}
+        onDeploy={() => environment && void onDeploy(project.id, environment.id)}
+      />
+      <section className="project-section-intro">
+        <div>
+          <h2>Cron jobs</h2>
+          <p>Scheduled invocations managed as Cloudflare cron triggers.</p>
+        </div>
+      </section>
+      <section className="panel cron-panel">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Schedules</span>
+            <h2>{schedules.length} active</h2>
+          </div>
+        </div>
+        <div className="cron-form">
+          <input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder="*/5 * * * *"
+            aria-label="Cron expression"
+          />
+          <button
+            className="button button--secondary"
+            type="button"
+            disabled={!draft.trim() || schedules.length >= 5 || saving}
+            onClick={() => {
+              const next = draft.trim();
+              setDraft('');
+              if (!next || schedules.includes(next)) return;
+              save([...schedules, next]);
+            }}
+          >
+            <Plus size={15} /> Add
+          </button>
+        </div>
+        <div className="cron-list">
+          {schedules.map((schedule) => (
+            <div className="cron-row" key={schedule}>
+              <code>{schedule}</code>
+              <button
+                className="row-action danger-action"
+                type="button"
+                aria-label={`Remove ${schedule}`}
+                disabled={saving}
+                onClick={() => save(schedules.filter((item) => item !== schedule))}
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
+          ))}
+          {schedules.length === 0 ? (
+            <p className="muted-copy">No cron schedules. The Worker still runs over HTTP.</p>
+          ) : null}
+        </div>
+        {error ? <div className="inline-alert">{error}</div> : null}
+      </section>
     </div>
   );
 }

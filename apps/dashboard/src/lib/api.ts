@@ -440,6 +440,39 @@ export async function setSystemDomainEnabled(
   );
 }
 
+export async function getCronSchedules(
+  projectId: string,
+  environmentId: string,
+): Promise<Array<{ cron: string; createdOn: string; modifiedOn: string }>> {
+  if (isDemoMode()) return [];
+  return request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/cron`,
+    { method: 'GET' },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return z
+        .array(z.object({ cron: z.string(), createdOn: z.string(), modifiedOn: z.string() }))
+        .parse(envelope.data);
+    },
+  );
+}
+
+export async function setCronSchedules(
+  projectId: string,
+  environmentId: string,
+  schedules: string[],
+): Promise<void> {
+  if (isDemoMode()) return;
+  await request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/cron`,
+    { method: 'PUT', body: JSON.stringify({ schedules }) },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return envelope.data;
+    },
+  );
+}
+
 export async function rollbackDeployment(deploymentId: string): Promise<Deployment> {
   if (isDemoMode()) {
     const target = demoSummary.deployments.find((deployment) => deployment.id === deploymentId);

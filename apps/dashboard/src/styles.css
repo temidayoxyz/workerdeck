@@ -3297,6 +3297,45 @@ select:focus-visible {
 .traffic-empty {
   padding: 4px 18px 16px;
 }
+.cron-form {
+  display: flex;
+  gap: 8px;
+  padding: 0 18px 14px;
+}
+.cron-form input {
+  height: 38px;
+  flex: 1;
+  padding: 0 11px;
+  color: var(--ink);
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  outline: 0;
+  font:
+    13px 'IBM Plex Mono',
+    monospace;
+}
+.cron-form input:focus {
+  border-color: var(--cyan);
+}
+.cron-list {
+  padding: 4px 18px 16px;
+}
+.cron-row {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.cron-row:last-child {
+  border-bottom: 0;
+}
+.cron-row code {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
 .domain-route-row {
   display: grid;
   grid-template-columns: 38px 1fr 30px;

@@ -12,6 +12,7 @@ const tabs = [
   { label: 'Resources', path: '/resources' },
   { label: 'Domains', path: '/domains' },
   { label: 'Variables', path: '/variables' },
+  { label: 'Cron', path: '/cron' },
   { label: 'Settings', path: '/settings' },
 ];
 
