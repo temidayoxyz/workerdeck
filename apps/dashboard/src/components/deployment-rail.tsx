@@ -33,7 +33,12 @@ function stagesFor(deployment: Deployment, production: boolean): DeploymentStage
       key: 'traffic',
       label: production ? 'Traffic' : 'Preview',
       status: deployment.status === 'ready' ? 'complete' : 'waiting',
-      detail: deployment.status === 'ready' ? (production ? '100%' : 'Ready') : null,
+      detail:
+        deployment.status === 'ready'
+          ? production
+            ? '100%'
+            : (deployment.previewUrl ?? 'Ready')
+          : null,
     },
   ];
 }

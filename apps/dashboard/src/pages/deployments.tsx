@@ -1,5 +1,12 @@
 import type { DashboardSummary } from '@workerdeck/contracts';
-import { AlertCircle, Code2, GitCommitHorizontal, RotateCcw, Trash2 } from '../components/icon';
+import {
+  AlertCircle,
+  Code2,
+  ExternalLink,
+  GitCommitHorizontal,
+  RotateCcw,
+  Trash2,
+} from '../components/icon';
 import { useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import type { ShellContext } from '../components/app-shell';
@@ -69,6 +76,18 @@ export function DeploymentsPage({
                     {deployment.gitCommitMessage ?? 'Manual deployment'}
                   </span>
                 </small>
+                {deployment.previewUrl ? (
+                  <a
+                    className="preview-url-link"
+                    href={deployment.previewUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={deployment.previewUrl}
+                  >
+                    <ExternalLink size={12} />
+                    <span>{new URL(deployment.previewUrl).hostname}</span>
+                  </a>
+                ) : null}
               </span>
               <span>
                 <code>{deployment.gitBranch ?? 'main'}</code>

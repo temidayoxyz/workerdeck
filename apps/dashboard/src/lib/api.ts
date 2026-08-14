@@ -145,6 +145,7 @@ export async function createDeployment(
       gitBranch: 'main',
       buildId: crypto.randomUUID(),
       workerVersionId: null,
+      previewUrl: null,
       triggeredBy: 'demo@workerdeck.local',
       startedAt: new Date().toISOString(),
       finishedAt: null,

@@ -146,7 +146,28 @@ const toEnvironment = (row: EnvironmentRow): Environment => ({
   updatedAt: normalizeStorageTimestamp(row.updated_at),
 });
 
-const toDeployment = (row: DeploymentRow): Deployment => ({
+export const previewUrlForDeployment = (
+  deployment: Pick<DeploymentRow, 'worker_version_id'>,
+  environment: Pick<EnvironmentRow, 'kind' | 'worker_name'> | undefined,
+  productionUrl: string | null,
+): string | null => {
+  if (!environment || environment.kind !== 'preview') return null;
+  if (!deployment.worker_version_id || !environment.worker_name || !productionUrl) return null;
+  try {
+    const hostname = new URL(productionUrl).hostname.toLowerCase();
+    const expectedPrefix = `${environment.worker_name.toLowerCase()}.`;
+    if (!hostname.startsWith(expectedPrefix) || !hostname.endsWith('.workers.dev')) {
+      return null;
+    }
+    const subdomain = hostname.slice(expectedPrefix.length, -'.workers.dev'.length);
+    if (!subdomain) return null;
+    return `https://${deployment.worker_version_id.slice(0, 8)}-${environment.worker_name}.${subdomain}.workers.dev`;
+  } catch {
+    return null;
+  }
+};
+
+const toDeployment = (row: DeploymentRow, previewUrl: string | null = null): Deployment => ({
   id: row.id,
   projectId: row.project_id,
   environmentId: row.environment_id,
@@ -156,6 +177,7 @@ const toDeployment = (row: DeploymentRow): Deployment => ({
   gitBranch: row.git_branch,
   buildId: row.build_id,
   workerVersionId: row.worker_version_id,
+  previewUrl,
   triggeredBy: row.triggered_by,
   startedAt: normalizeNullableStorageTimestamp(row.started_at),
   finishedAt: normalizeNullableStorageTimestamp(row.finished_at),
@@ -235,10 +257,26 @@ export class Repository {
     };
     for (const row of resourceCounts.results) counts[row.kind] = row.count;
 
+    const environmentsById = new Map(environments.results.map((row) => [row.id, row]));
+    const productionUrls = new Map<string, string>();
+    for (const row of environments.results) {
+      if (row.kind === 'production' && row.url) productionUrls.set(row.project_id, row.url);
+    }
+    const serializedDeployments = deployments.results.map((row) =>
+      toDeployment(
+        row,
+        previewUrlForDeployment(
+          row,
+          environmentsById.get(row.environment_id),
+          productionUrls.get(row.project_id) ?? null,
+        ),
+      ),
+    );
+
     return {
       projects: projects.results.map(toProject),
       environments: environments.results.map(toEnvironment),
-      deployments: deployments.results.map(toDeployment),
+      deployments: serializedDeployments,
       domains,
       resourceCounts: counts,
       account,

@@ -1368,6 +1368,29 @@ select:focus-visible {
   border-radius: 4px;
   font-size: 8px;
 }
+.preview-url-link {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+  color: var(--blue);
+  font:
+    8px 'IBM Plex Mono',
+    monospace;
+  text-decoration: none;
+}
+.preview-url-link span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.preview-url-link:hover {
+  color: var(--blue-deep);
+  text-decoration: underline;
+}
 .health-badge,
 .healthy-label,
 .route-status {

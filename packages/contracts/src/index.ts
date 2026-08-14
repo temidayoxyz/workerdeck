@@ -92,6 +92,7 @@ export const deploymentSchema = z.object({
   gitBranch: z.string().max(255).nullable(),
   buildId: z.string().max(255).nullable(),
   workerVersionId: z.string().max(255).nullable(),
+  previewUrl: z.url().nullable().default(null),
   triggeredBy: z.string().max(255),
   startedAt: isoDateSchema.nullable(),
   finishedAt: isoDateSchema.nullable(),

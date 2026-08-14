@@ -329,6 +329,18 @@ export function ProjectDeploymentsPage({
               <span>
                 <strong>{deployment.gitCommitMessage ?? 'Manual deployment'}</strong>
                 <small>{shortSha(deployment.gitCommitSha)}</small>
+                {deployment.previewUrl ? (
+                  <a
+                    className="preview-url-link"
+                    href={deployment.previewUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={deployment.previewUrl}
+                  >
+                    <ExternalLink size={12} />
+                    <span>{new URL(deployment.previewUrl).hostname}</span>
+                  </a>
+                ) : null}
               </span>
             </span>
             <code>{deployment.gitBranch ?? project.productionBranch}</code>
