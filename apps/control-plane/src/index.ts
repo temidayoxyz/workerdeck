@@ -5,6 +5,7 @@ import {
   createProjectInputSchema,
   createResourceInputSchema,
   environmentVariableKeySchema,
+  inviteMemberInputSchema,
   purgeCacheInputSchema,
   revalidateCacheInputSchema,
   rollbackDeploymentInputSchema,
@@ -13,6 +14,9 @@ import {
   setTrafficInputSchema,
   repositoryInspectionSchema,
   upsertEnvironmentVariableInputSchema,
+  updateMemberInputSchema,
+  type AccessGroup,
+  type AccessTeam,
   type CacheRevalidationHint,
   type CacheRule,
   type CreateResourceInput,
@@ -20,6 +24,7 @@ import {
   type ProjectCache,
   type RecoveryResource,
   type ResourceKind,
+  type WorkspaceMember,
   type WorkerAnalytics,
   type WebAnalytics,
 } from '@workerdeck/contracts';
@@ -39,6 +44,12 @@ import {
 } from './build-commands';
 import { diagnoseBuildFailure } from './build-diagnostics';
 import { AppError } from './errors';
+import {
+  ACCESS_GROUP_ROLES,
+  accessGroupNameFor,
+  emailsForRole,
+  viewerRoleForMember,
+} from './access';
 import {
   cacheRulesetRulesFor,
   distinctCacheZones,
@@ -64,6 +75,28 @@ app.get('/api/health', (context) =>
 );
 
 app.use('/api/v1/*', authenticate);
+app.use('/api/v1/*', async (context, next) => {
+  if (
+    context.req.method === 'GET' ||
+    context.req.method === 'HEAD' ||
+    context.req.method === 'OPTIONS'
+  ) {
+    await next();
+    return;
+  }
+  const repository = new Repository(context.env.DB);
+  const email = actorEmail(context.get('actor'));
+  const member = email ? await repository.findMemberByEmail(email) : null;
+  const activeMemberCount = await repository.countActiveMembers();
+  if (viewerRoleForMember(member, activeMemberCount) === 'none') {
+    throw new AppError(
+      403,
+      'ROLE_REQUIRED',
+      'Your workspace role does not permit changes. Ask an owner or admin for access.',
+    );
+  }
+  await next();
+});
 app.use('/api/v1/*', verifyMutationOrigin);
 app.use(
   '/api/v1/*',
@@ -1603,6 +1636,141 @@ app.post(
   },
 );
 
+app.get('/api/v1/access/team', async (context) => {
+  return context.json({
+    data: await workspaceAccess(context),
+    requestId: context.get('requestId'),
+  });
+});
+
+app.post('/api/v1/access/members', async (context) => {
+  const parsed = inviteMemberInputSchema.safeParse(await context.req.json().catch(() => null));
+  if (!parsed.success) {
+    throw new AppError(
+      422,
+      'INVALID_MEMBER',
+      'Enter a valid email address and workspace role.',
+      parsed.error.flatten(),
+    );
+  }
+  const repository = new Repository(context.env.DB);
+  const actorEmailValue = actorEmail(context.get('actor'));
+  if ((await repository.countActiveMembers()) === 0) {
+    if (!actorEmailValue) {
+      throw new AppError(
+        400,
+        'ACTOR_EMAIL_REQUIRED',
+        'Your Cloudflare Access identity has no email to record as the first owner.',
+      );
+    }
+    await repository.upsertMember({
+      email: actorEmailValue.toLowerCase(),
+      role: 'owner',
+      invitedBy: null,
+      actor: context.get('actor'),
+      requestId: context.get('requestId'),
+    });
+  }
+  const actor = await actorMember(repository, context);
+  if (actor.role !== 'owner' && parsed.data.role === 'owner') {
+    throw new AppError(403, 'OWNER_INVITE_FORBIDDEN', 'Only owners can invite other owners.');
+  }
+  if (await repository.findMemberByEmail(parsed.data.email)) {
+    throw new AppError(409, 'MEMBER_ALREADY_EXISTS', 'That email is already a workspace member.');
+  }
+  await repository.upsertMember({
+    email: parsed.data.email,
+    role: parsed.data.role,
+    invitedBy: actor.email,
+    actor: context.get('actor'),
+    requestId: context.get('requestId'),
+  });
+  await syncAccessGroups(context);
+  return context.json(
+    { data: await workspaceAccess(context), requestId: context.get('requestId') },
+    201,
+  );
+});
+
+app.put('/api/v1/access/members/:memberId', async (context) => {
+  const parsed = updateMemberInputSchema.safeParse(await context.req.json().catch(() => null));
+  if (!parsed.success) {
+    throw new AppError(422, 'INVALID_MEMBER_ROLE', 'Choose a valid workspace role.');
+  }
+  const repository = new Repository(context.env.DB);
+  const actor = await actorMember(repository, context);
+  const target = await repository.findMemberById(context.req.param('memberId'));
+  if (!target) {
+    throw new AppError(404, 'MEMBER_NOT_FOUND', 'That workspace member does not exist.');
+  }
+  if (actor.role !== 'owner' && (target.role === 'owner' || parsed.data.role === 'owner')) {
+    throw new AppError(403, 'OWNER_ROLE_FORBIDDEN', 'Only owners can change owner roles.');
+  }
+  if (actor.id === target.id && parsed.data.role !== 'owner') {
+    const activeOwners = await repository.countActiveRole('owner');
+    if (activeOwners <= 1) {
+      throw new AppError(
+        409,
+        'LAST_OWNER',
+        'Transfer ownership to another member before leaving the owner role.',
+      );
+    }
+  }
+  await repository.updateMemberRole(
+    target.id,
+    parsed.data.role,
+    context.get('actor'),
+    context.get('requestId'),
+  );
+  await syncAccessGroups(context);
+  return context.json({
+    data: await workspaceAccess(context),
+    requestId: context.get('requestId'),
+  });
+});
+
+app.delete('/api/v1/access/members/:memberId', async (context) => {
+  const repository = new Repository(context.env.DB);
+  const actor = await actorMember(repository, context);
+  const target = await repository.findMemberById(context.req.param('memberId'));
+  if (!target) {
+    throw new AppError(404, 'MEMBER_NOT_FOUND', 'That workspace member does not exist.');
+  }
+  if (actor.role !== 'owner' && target.role === 'owner') {
+    throw new AppError(403, 'OWNER_REMOVAL_FORBIDDEN', 'Only owners can remove other owners.');
+  }
+  if (target.role === 'owner' && (await repository.countActiveRole('owner')) <= 1) {
+    throw new AppError(
+      409,
+      'LAST_OWNER',
+      'Transfer ownership to another member before removing the final owner.',
+    );
+  }
+  await repository.removeMember(target.id, context.get('actor'), context.get('requestId'));
+  await syncAccessGroups(context);
+  return context.json({
+    data: await workspaceAccess(context),
+    requestId: context.get('requestId'),
+  });
+});
+
+app.post('/api/v1/access/sync', async (context) => {
+  const repository = new Repository(context.env.DB);
+  const actor = await actorMember(repository, context);
+  if (actor.role === 'member') {
+    throw new AppError(
+      403,
+      'ROLE_REQUIRED',
+      'Only owners and admins can sync Cloudflare Access groups.',
+    );
+  }
+  await syncAccessGroups(context);
+  return context.json({
+    data: await workspaceAccess(context),
+    requestId: context.get('requestId'),
+  });
+});
+
 app.get('/api/v1/cloudflare/durable-objects/namespaces', async (context) => {
   const namespaces = await cloudflareClient(context).listDurableObjectNamespaces();
   return context.json({ data: namespaces, requestId: context.get('requestId') });
@@ -2399,6 +2567,124 @@ async function revalidateProjectCache(
     );
   }
   return paths.map((path) => ({ pathExpression: path, revalidatedAt: now }));
+}
+
+async function actorMember(
+  repository: Repository,
+  context: Context<AppEnv>,
+): Promise<WorkspaceMember> {
+  const email = actorEmail(context.get('actor'));
+  const member = email ? await repository.findMemberByEmail(email) : null;
+  if (!member) {
+    throw new AppError(403, 'ROLE_REQUIRED', 'Your workspace role does not permit this action.');
+  }
+  return member;
+}
+
+async function workspaceAccess(context: Context<AppEnv>): Promise<AccessTeam> {
+  const repository = new Repository(context.env.DB);
+  const [members, groupRows] = await Promise.all([
+    repository.listMembers(),
+    repository.listAccessGroups(),
+  ]);
+  const email = actorEmail(context.get('actor'));
+  const viewerMember = email
+    ? (members.find((member) => member.email.toLowerCase() === email.toLowerCase()) ?? null)
+    : null;
+  const groups: AccessGroup[] = ACCESS_GROUP_ROLES.map((role) => {
+    const row = groupRows.find((group) => group.role === role);
+    return {
+      role,
+      name: accessGroupNameFor(role, context.env.CLOUDFLARE_ACCOUNT_NAME),
+      cloudflareId: row?.cloudflare_id ?? null,
+      syncedAt: row?.synced_at ?? null,
+      syncError: row?.sync_error ?? null,
+    };
+  });
+  return {
+    members,
+    groups,
+    viewer: { email, role: viewerRoleForMember(viewerMember, members.length) },
+  };
+}
+
+async function syncAccessGroups(context: Context<AppEnv>): Promise<AccessGroup[]> {
+  const repository = new Repository(context.env.DB);
+  const members = await repository.listMembers();
+  let client: CloudflareClient | null = null;
+  try {
+    client = cloudflareClient(context);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Cloudflare is not connected.';
+    const results: AccessGroup[] = [];
+    for (const role of ACCESS_GROUP_ROLES) {
+      await repository.upsertAccessGroup(role, {
+        cloudflareId: null,
+        syncedAt: null,
+        syncError: message.slice(0, 500),
+      });
+      results.push({
+        role,
+        name: accessGroupNameFor(role, context.env.CLOUDFLARE_ACCOUNT_NAME),
+        cloudflareId: null,
+        syncedAt: null,
+        syncError: message.slice(0, 500),
+      });
+    }
+    return results;
+  }
+  const results: AccessGroup[] = [];
+  for (const role of ACCESS_GROUP_ROLES) {
+    const name = accessGroupNameFor(role, context.env.CLOUDFLARE_ACCOUNT_NAME);
+    const emails = emailsForRole(members, role);
+    try {
+      const existing = (await client.listAccessGroups(name))[0];
+      const syncedAt = new Date().toISOString();
+      if (existing && emails.length === 0) {
+        await client.deleteAccessGroup(existing.id);
+        await repository.upsertAccessGroup(role, { cloudflareId: null, syncedAt, syncError: null });
+        results.push({ role, name, cloudflareId: null, syncedAt, syncError: null });
+      } else if (existing) {
+        await client.updateAccessGroup(existing.id, emails);
+        await repository.upsertAccessGroup(role, {
+          cloudflareId: existing.id,
+          syncedAt,
+          syncError: null,
+        });
+        results.push({ role, name, cloudflareId: existing.id, syncedAt, syncError: null });
+      } else if (emails.length > 0) {
+        const created = await client.createAccessGroup(name, emails);
+        await repository.upsertAccessGroup(role, {
+          cloudflareId: created.id,
+          syncedAt,
+          syncError: null,
+        });
+        results.push({ role, name, cloudflareId: created.id, syncedAt, syncError: null });
+      } else {
+        await repository.upsertAccessGroup(role, {
+          cloudflareId: null,
+          syncedAt: null,
+          syncError: null,
+        });
+        results.push({ role, name, cloudflareId: null, syncedAt: null, syncError: null });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Access group sync failed.';
+      await repository.upsertAccessGroup(role, {
+        cloudflareId: null,
+        syncedAt: null,
+        syncError: message.slice(0, 500),
+      });
+      results.push({
+        role,
+        name,
+        cloudflareId: null,
+        syncedAt: null,
+        syncError: message.slice(0, 500),
+      });
+    }
+  }
+  return results;
 }
 
 async function requireBuildToken(

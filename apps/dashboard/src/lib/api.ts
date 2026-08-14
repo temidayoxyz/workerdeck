@@ -2,6 +2,7 @@ import {
   apiErrorSchema,
   buildLogsSchema,
   cacheRevalidationHintSchema,
+  accessTeamSchema,
   dashboardSummarySchema,
   deploymentSchema,
   environmentVariableSchema,
@@ -20,6 +21,7 @@ import {
   projectSchema,
   type ApiSuccess,
   type BuildLogs,
+  type AccessTeam,
   type CacheRevalidationHint,
   type CreateProjectInput,
   type DashboardSummary,
@@ -38,6 +40,8 @@ import {
   type ProjectCache,
   type RecoveryPosture,
   type UsageSummary,
+  type WorkspaceMember,
+  type WorkspaceRole,
   type WebAnalytics,
   type WorkerAnalytics,
 } from '@workerdeck/contracts';
@@ -666,6 +670,106 @@ export async function revalidateProjectCache(
   );
 }
 
+export async function getAccessTeam(): Promise<AccessTeam> {
+  if (isDemoMode()) return Promise.resolve(demoAccessTeam());
+  return request('/api/v1/access/team', { method: 'GET' }, (value) => {
+    const envelope = value as ApiSuccess<unknown>;
+    return accessTeamSchema.parse(envelope.data);
+  });
+}
+
+export async function inviteMember(input: {
+  email: string;
+  role: WorkspaceRole;
+}): Promise<AccessTeam> {
+  if (isDemoMode()) {
+    const state = demoAccessTeam();
+    const existing = state.members.find(
+      (member) => member.email.toLowerCase() === input.email.toLowerCase(),
+    );
+    if (existing)
+      throw new ApiError(
+        'MEMBER_ALREADY_EXISTS',
+        'That email is already a workspace member.',
+        'demo',
+      );
+    const member: WorkspaceMember = {
+      id: crypto.randomUUID(),
+      email: input.email.toLowerCase(),
+      role: input.role,
+      status: 'active',
+      invitedBy: state.viewer.email,
+      createdAt: new Date().toISOString(),
+    };
+    demoAccessState = { ...state, members: [...state.members, member] };
+    return Promise.resolve(demoAccessState);
+  }
+  return request(
+    '/api/v1/access/members',
+    { method: 'POST', body: JSON.stringify(input) },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return accessTeamSchema.parse(envelope.data);
+    },
+  );
+}
+
+export async function updateMemberRole(memberId: string, role: WorkspaceRole): Promise<AccessTeam> {
+  if (isDemoMode()) {
+    const state = demoAccessTeam();
+    demoAccessState = {
+      ...state,
+      members: state.members.map((member) =>
+        member.id === memberId ? { ...member, role } : member,
+      ),
+    };
+    return Promise.resolve(demoAccessState);
+  }
+  return request(
+    `/api/v1/access/members/${encodeURIComponent(memberId)}`,
+    { method: 'PUT', body: JSON.stringify({ role }) },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return accessTeamSchema.parse(envelope.data);
+    },
+  );
+}
+
+export async function removeMember(memberId: string): Promise<AccessTeam> {
+  if (isDemoMode()) {
+    const state = demoAccessTeam();
+    demoAccessState = {
+      ...state,
+      members: state.members.filter((member) => member.id !== memberId),
+    };
+    return Promise.resolve(demoAccessState);
+  }
+  return request(
+    `/api/v1/access/members/${encodeURIComponent(memberId)}`,
+    { method: 'DELETE' },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return accessTeamSchema.parse(envelope.data);
+    },
+  );
+}
+
+export async function syncAccessGroups(): Promise<AccessTeam> {
+  if (isDemoMode()) {
+    const state = demoAccessTeam();
+    const syncedAt = new Date().toISOString();
+    demoAccessState = {
+      ...state,
+      groups: state.groups.map((group) => ({ ...group, syncedAt, syncError: null })),
+    };
+    return Promise.resolve(demoAccessState);
+  }
+  return request('/api/v1/access/sync', { method: 'POST' }, (value) => {
+    const envelope = value as ApiSuccess<unknown>;
+    return accessTeamSchema.parse(envelope.data);
+  });
+}
+
 export async function rollbackDeployment(deploymentId: string): Promise<Deployment> {
   if (isDemoMode()) {
     const target = demoSummary.deployments.find((deployment) => deployment.id === deploymentId);
@@ -1051,4 +1155,70 @@ function demoProjectCache(): ProjectCache {
     };
   }
   return demoCacheState;
+}
+
+let demoAccessState: AccessTeam | null = null;
+
+function demoAccessTeam(): AccessTeam {
+  if (!demoAccessState) {
+    const syncedAt = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+    const seeded = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
+    const recent = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString();
+    demoAccessState = {
+      members: [
+        {
+          id: 'a91d7f10-2c3e-4d5f-9a8b-7c6d5e4f3a21',
+          email: 'temidayoxyz@gmail.com',
+          role: 'owner',
+          status: 'active',
+          invitedBy: null,
+          createdAt: seeded,
+        },
+        {
+          id: 'b82e8f21-3d4f-4e60-aa9c-8d7e6f5a4b32',
+          email: 'ada@example.com',
+          role: 'admin',
+          status: 'active',
+          invitedBy: 'temidayoxyz@gmail.com',
+          createdAt: recent,
+        },
+        {
+          id: 'c93f9f32-4e50-4f71-bbad-9e8f7a6b5c43',
+          email: 'grace@example.com',
+          role: 'member',
+          status: 'active',
+          invitedBy: 'temidayoxyz@gmail.com',
+          createdAt: recent,
+        },
+      ],
+      groups: [
+        {
+          role: 'owner',
+          name: 'WorkerDeck - Temidayo Cloud - Owners',
+          cloudflareId: 'access-group-owner-demo',
+          syncedAt,
+          syncError: null,
+        },
+        {
+          role: 'admin',
+          name: 'WorkerDeck - Temidayo Cloud - Admins',
+          cloudflareId: 'access-group-admin-demo',
+          syncedAt,
+          syncError: null,
+        },
+        {
+          role: 'member',
+          name: 'WorkerDeck - Temidayo Cloud - Members',
+          cloudflareId: 'access-group-member-demo',
+          syncedAt,
+          syncError: null,
+        },
+      ],
+      viewer: {
+        email: 'temidayoxyz@gmail.com',
+        role: 'owner',
+      },
+    };
+  }
+  return demoAccessState;
 }

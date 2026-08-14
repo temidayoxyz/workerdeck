@@ -16,6 +16,7 @@ import {
   Rocket,
   Settings,
   Sun,
+  Users,
 } from './icon';
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -31,6 +32,7 @@ const primaryNavigation = [
   { label: 'Domains', to: '/domains', icon: Globe2 },
   { label: 'Observability', to: '/observability', icon: Activity },
   { label: 'Backups', to: '/backups', icon: DatabaseBackup },
+  { label: 'Team', to: '/team', icon: Users },
 ];
 
 const pageNames: Record<string, string> = {
@@ -44,6 +46,7 @@ const pageNames: Record<string, string> = {
   '/backups': 'Backups',
   '/usage': 'Usage',
   '/settings': 'Settings',
+  '/team': 'Team',
 };
 
 export interface ShellContext {

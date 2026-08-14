@@ -23,6 +23,7 @@ import type {
   WorkerAnalyticsRow,
   WebAnalyticsRows,
   CloudflareZoneCacheRuleset,
+  CloudflareAccessGroup,
   BuildAccountLimits,
 } from './types';
 
@@ -508,6 +509,51 @@ export class CloudflareClient {
       method: 'POST',
       body: JSON.stringify({ purge_everything: true }),
     });
+  }
+
+  async listAccessGroups(name?: string): Promise<CloudflareAccessGroup[]> {
+    const accountId = this.#requireAccountId();
+    const query = name ? `?name=${encodeURIComponent(name)}` : '';
+    return this.#request(
+      `/accounts/${accountId}/access/groups${query}`,
+      z.array(z.object({ id: z.string(), name: z.string() })),
+    );
+  }
+
+  async createAccessGroup(name: string, emails: string[]): Promise<CloudflareAccessGroup> {
+    const accountId = this.#requireAccountId();
+    return this.#request(
+      `/accounts/${accountId}/access/groups`,
+      z.object({ id: z.string(), name: z.string() }),
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          name,
+          include: emails.map((email) => ({ email: { email } })),
+        }),
+      },
+    );
+  }
+
+  async updateAccessGroup(groupId: string, emails: string[]): Promise<void> {
+    const accountId = this.#requireAccountId();
+    await this.#request(
+      `/accounts/${accountId}/access/groups/${encodeURIComponent(groupId)}`,
+      z.unknown(),
+      {
+        method: 'PUT',
+        body: JSON.stringify({ include: emails.map((email) => ({ email: { email } })) }),
+      },
+    );
+  }
+
+  async deleteAccessGroup(groupId: string): Promise<void> {
+    const accountId = this.#requireAccountId();
+    await this.#request(
+      `/accounts/${accountId}/access/groups/${encodeURIComponent(groupId)}`,
+      z.unknown(),
+      { method: 'DELETE' },
+    );
   }
 
   async writeKvValue(namespaceId: string, key: string, value: string): Promise<void> {

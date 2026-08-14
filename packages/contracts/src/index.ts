@@ -54,6 +54,9 @@ export const resourceKindSchema = z.enum([
 
 export const resourceStatusSchema = z.enum(['active', 'detaching', 'adopted']);
 
+export const workspaceRoleSchema = z.enum(['owner', 'admin', 'member']);
+export const workspaceViewerRoleSchema = z.enum(['owner', 'admin', 'member', 'none']);
+
 export const projectSchema = z.object({
   id: z.uuid(),
   slug: identifierSchema,
@@ -144,6 +147,10 @@ export const dashboardSummarySchema = z.object({
     userEmail: z.string().email().nullable(),
     plan: z.enum(['free', 'paid', 'unknown']),
     connected: z.boolean(),
+  }),
+  viewer: z.object({
+    email: z.string().email().nullable(),
+    role: workspaceViewerRoleSchema,
   }),
   sync: z
     .object({
@@ -629,6 +636,41 @@ export const usageSummarySchema = z.object({
   }),
 });
 
+export const workspaceMemberSchema = z.object({
+  id: z.uuid(),
+  email: z.string().email(),
+  role: workspaceRoleSchema,
+  status: z.enum(['active', 'removed']),
+  invitedBy: z.string().max(255).nullable(),
+  createdAt: isoDateSchema,
+});
+
+export const inviteMemberInputSchema = z.object({
+  email: z.string().trim().toLowerCase().email(),
+  role: workspaceRoleSchema,
+});
+
+export const updateMemberInputSchema = z.object({
+  role: workspaceRoleSchema,
+});
+
+export const accessGroupSchema = z.object({
+  role: workspaceRoleSchema,
+  name: z.string().min(1).max(255),
+  cloudflareId: z.string().min(1).max(255).nullable(),
+  syncedAt: isoDateSchema.nullable(),
+  syncError: z.string().max(500).nullable(),
+});
+
+export const accessTeamSchema = z.object({
+  members: z.array(workspaceMemberSchema),
+  groups: z.array(accessGroupSchema),
+  viewer: z.object({
+    email: z.string().email().nullable(),
+    role: workspaceViewerRoleSchema,
+  }),
+});
+
 export const apiErrorSchema = z.object({
   error: z.object({
     code: z.string(),
@@ -643,6 +685,13 @@ export type Environment = z.infer<typeof environmentSchema>;
 export type Deployment = z.infer<typeof deploymentSchema>;
 export type ManagedResource = z.infer<typeof managedResourceSchema>;
 export type DashboardSummary = z.infer<typeof dashboardSummarySchema>;
+export type WorkspaceRole = z.infer<typeof workspaceRoleSchema>;
+export type WorkspaceViewerRole = z.infer<typeof workspaceViewerRoleSchema>;
+export type WorkspaceMember = z.infer<typeof workspaceMemberSchema>;
+export type InviteMemberInput = z.infer<typeof inviteMemberInputSchema>;
+export type UpdateMemberInput = z.infer<typeof updateMemberInputSchema>;
+export type AccessGroup = z.infer<typeof accessGroupSchema>;
+export type AccessTeam = z.infer<typeof accessTeamSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectInputSchema>;
 export type CreateDeploymentInput = z.infer<typeof createDeploymentInputSchema>;
 export type CreateResourceInput = z.infer<typeof createResourceInputSchema>;

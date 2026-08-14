@@ -181,6 +181,11 @@ export interface CloudflareZoneCacheRuleset {
   rules: Array<Record<string, unknown>>;
 }
 
+export interface CloudflareAccessGroup {
+  id: string;
+  name: string;
+}
+
 export interface BuildAccountLimits {
   limitReached: boolean | null;
   refreshesAt: string | null;

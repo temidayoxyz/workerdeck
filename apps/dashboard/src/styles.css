@@ -4666,3 +4666,189 @@ select:focus-visible {
     grid-row: 2;
   }
 }
+
+/* Team & roles -------------------------------------------------------------
+ * Workspace members mapped to Cloudflare Access groups by role.
+ */
+.team-state-panel {
+  display: flex;
+  min-height: 150px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 18px;
+  color: var(--ink-faint);
+}
+.team-state-panel svg {
+  color: var(--cyan);
+}
+.role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.app-shell .role-chip {
+  font-size: 12px;
+  line-height: 1.35;
+}
+.role-chip--owner {
+  color: var(--orange);
+  background: var(--orange-soft);
+  border: 1px solid rgb(255 107 0 / 24%);
+}
+.role-chip--admin {
+  color: var(--cyan);
+  background: var(--cyan-soft);
+  border: 1px solid rgb(55 212 236 / 22%);
+}
+.role-chip--member {
+  color: var(--green);
+  background: var(--green-soft);
+  border: 1px solid rgb(69 206 152 / 22%);
+}
+.role-chip--none {
+  color: var(--ink-soft);
+  background: var(--surface-raised);
+  border: 1px solid var(--line-strong);
+}
+.team-members-panel,
+.team-groups-panel {
+  min-width: 0;
+}
+.team-invite-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 130px auto;
+  gap: 10px;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.team-invite-form input,
+.team-invite-form select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  color: var(--ink);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.team-invite-form input {
+  font-family: 'IBM Plex Mono', monospace;
+}
+.team-member-list {
+  padding: 4px 18px;
+}
+.team-member-row {
+  display: grid;
+  min-height: 62px;
+  grid-template-columns: 34px minmax(0, 1fr) 130px 34px;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.team-member-row:last-child {
+  border-bottom: 0;
+}
+.member-avatar {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  color: var(--orange);
+  background: var(--orange-soft);
+  border: 1px solid rgb(255 107 0 / 22%);
+  border-radius: 6px;
+  font:
+    650 13px 'IBM Plex Mono',
+    monospace;
+}
+.member-identity {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.app-shell .member-identity strong {
+  font-size: 13px;
+}
+.member-identity em {
+  margin-left: 7px;
+  color: var(--cyan);
+  font-size: 11px;
+  font-style: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.app-shell .member-identity small {
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+.member-role-select {
+  width: 100%;
+  padding: 7px 8px;
+  color: var(--ink);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.member-row-spacer {
+  width: 8px;
+  height: 8px;
+  background: var(--green);
+  border-radius: 50%;
+}
+.team-groups-note {
+  margin: 14px 18px 4px;
+  color: var(--ink-soft);
+}
+.team-group-list {
+  padding: 8px 18px;
+}
+.team-group-row {
+  display: grid;
+  min-height: 54px;
+  grid-template-columns: 110px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.team-group-row:last-child {
+  border-bottom: 0;
+}
+.team-group-name {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.app-shell .team-group-name code {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-shell .team-group-name small {
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+.team-panel-footer {
+  padding: 14px 18px;
+  border-top: 1px solid var(--line-soft);
+}
+
+@media (max-width: 620px) {
+  .team-invite-form {
+    grid-template-columns: 1fr;
+  }
+  .team-member-row {
+    grid-template-columns: 34px minmax(0, 1fr) 34px;
+    padding: 10px 0;
+  }
+  .member-role-select {
+    grid-column: 2;
+  }
+}

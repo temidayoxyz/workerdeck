@@ -11,6 +11,10 @@ export const demoSummary: DashboardSummary = {
     plan: 'free',
     connected: true,
   },
+  viewer: {
+    email: 'temidayoxyz@gmail.com',
+    role: 'owner',
+  },
   projects: [
     {
       id: 'f7a042f3-d7e7-43a5-8969-7b7cda7d1c88',

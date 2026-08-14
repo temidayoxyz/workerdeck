@@ -14,6 +14,8 @@ import {
   type ResourceKind,
   type ResourceStatus,
   type WorkerDomain,
+  type WorkspaceMember,
+  type WorkspaceRole,
 } from '@workerdeck/contracts';
 import type { WorkerBuild } from '@workerdeck/provider';
 import { AppError } from './errors';
@@ -129,6 +131,24 @@ interface CacheSettingsRow {
   updated_at: string;
 }
 
+interface WorkspaceMemberRow {
+  id: string;
+  email: string;
+  role: WorkspaceRole;
+  status: 'active' | 'removed';
+  invited_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface AccessGroupRow {
+  role: WorkspaceRole;
+  cloudflare_id: string | null;
+  synced_at: string | null;
+  sync_error: string | null;
+  updated_at: string;
+}
+
 interface GitInstallationRow {
   id: string;
   provider: 'github';
@@ -218,6 +238,15 @@ const toManagedResource = (row: ManagedResourceRow): ManagedResource => ({
   deletedAt: normalizeNullableStorageTimestamp(row.deleted_at),
 });
 
+const toWorkspaceMember = (row: WorkspaceMemberRow): WorkspaceMember => ({
+  id: row.id,
+  email: row.email,
+  role: row.role,
+  status: row.status,
+  invitedBy: row.invited_by,
+  createdAt: normalizeStorageTimestamp(row.created_at),
+});
+
 interface CreatedProject {
   project: Project;
   initialDeployment: Deployment | null;
@@ -243,25 +272,39 @@ export class Repository {
   constructor(private readonly db: D1Database) {}
 
   async dashboard(account: DashboardSummary['account']): Promise<DashboardSummary> {
-    const [projects, environments, deployments, resourceCounts, domains, health] =
-      await Promise.all([
-        this.db
-          .prepare('SELECT * FROM projects ORDER BY updated_at DESC LIMIT 50')
-          .all<ProjectRow>(),
-        this.db
-          .prepare('SELECT * FROM environments ORDER BY updated_at DESC LIMIT 100')
-          .all<EnvironmentRow>(),
-        this.db
-          .prepare('SELECT * FROM deployments ORDER BY created_at DESC LIMIT 30')
-          .all<DeploymentRow>(),
-        this.db
-          .prepare(
-            'SELECT kind, COUNT(*) AS count FROM managed_resources WHERE deleted_at IS NULL GROUP BY kind',
-          )
-          .all<{ kind: ResourceKind; count: number }>(),
-        this.listSyncedDomains(),
-        this.buildSyncHealth(),
-      ]);
+    const [
+      projects,
+      environments,
+      deployments,
+      resourceCounts,
+      domains,
+      health,
+      member,
+      memberCount,
+    ] = await Promise.all([
+      this.db.prepare('SELECT * FROM projects ORDER BY updated_at DESC LIMIT 50').all<ProjectRow>(),
+      this.db
+        .prepare('SELECT * FROM environments ORDER BY updated_at DESC LIMIT 100')
+        .all<EnvironmentRow>(),
+      this.db
+        .prepare('SELECT * FROM deployments ORDER BY created_at DESC LIMIT 30')
+        .all<DeploymentRow>(),
+      this.db
+        .prepare(
+          'SELECT kind, COUNT(*) AS count FROM managed_resources WHERE deleted_at IS NULL GROUP BY kind',
+        )
+        .all<{ kind: ResourceKind; count: number }>(),
+      this.listSyncedDomains(),
+      this.buildSyncHealth(),
+      this.db
+        .prepare('SELECT * FROM workspace_members WHERE email = ? AND status = ?')
+        .bind(account.userEmail, 'active')
+        .first<WorkspaceMemberRow>(),
+      this.db
+        .prepare('SELECT COUNT(*) AS count FROM workspace_members WHERE status = ?')
+        .bind('active')
+        .first<{ count: number }>(),
+    ]);
 
     const counts: DashboardSummary['resourceCounts'] = {
       worker: 0,
@@ -301,6 +344,10 @@ export class Repository {
       domains,
       resourceCounts: counts,
       account,
+      viewer: {
+        email: account.userEmail,
+        role: member?.role ?? (memberCount && memberCount.count === 0 ? 'owner' : 'none'),
+      },
       sync: health
         ? {
             status: health.status,
@@ -655,6 +702,154 @@ export class Repository {
           now,
         ),
     ]);
+  }
+
+  async listMembers(): Promise<WorkspaceMember[]> {
+    const result = await this.db
+      .prepare('SELECT * FROM workspace_members WHERE status = ? ORDER BY role ASC, created_at ASC')
+      .bind('active')
+      .all<WorkspaceMemberRow>();
+    return result.results.map(toWorkspaceMember);
+  }
+
+  async findMemberByEmail(email: string): Promise<WorkspaceMember | null> {
+    const row = await this.db
+      .prepare('SELECT * FROM workspace_members WHERE email = ? AND status = ?')
+      .bind(email, 'active')
+      .first<WorkspaceMemberRow>();
+    return row ? toWorkspaceMember(row) : null;
+  }
+
+  async findMemberById(id: string): Promise<WorkspaceMember | null> {
+    const row = await this.db
+      .prepare('SELECT * FROM workspace_members WHERE id = ? AND status = ?')
+      .bind(id, 'active')
+      .first<WorkspaceMemberRow>();
+    return row ? toWorkspaceMember(row) : null;
+  }
+
+  async countActiveMembers(): Promise<number> {
+    const row = await this.db
+      .prepare('SELECT COUNT(*) AS count FROM workspace_members WHERE status = ?')
+      .bind('active')
+      .first<{ count: number }>();
+    return row?.count ?? 0;
+  }
+
+  async countActiveRole(role: WorkspaceRole): Promise<number> {
+    const row = await this.db
+      .prepare('SELECT COUNT(*) AS count FROM workspace_members WHERE role = ? AND status = ?')
+      .bind(role, 'active')
+      .first<{ count: number }>();
+    return row?.count ?? 0;
+  }
+
+  async upsertMember(input: {
+    email: string;
+    role: WorkspaceRole;
+    invitedBy: string | null;
+    actor: string;
+    requestId: string;
+  }): Promise<WorkspaceMember> {
+    const now = new Date().toISOString();
+    const id = crypto.randomUUID();
+    await this.db.batch([
+      this.db
+        .prepare(
+          `INSERT INTO workspace_members (id, email, role, status, invited_by, created_at, updated_at)
+           VALUES (?, ?, ?, 'active', ?, ?, ?)
+           ON CONFLICT(email) DO UPDATE SET
+             role = excluded.role,
+             status = 'active',
+             invited_by = excluded.invited_by,
+             updated_at = excluded.updated_at`,
+        )
+        .bind(id, input.email, input.role, input.invitedBy, now, now),
+      this.db
+        .prepare(
+          `INSERT INTO audit_events (
+            id, actor, action, target_type, target_id, request_id, metadata_json, created_at
+          ) VALUES (?, ?, 'member.invited', 'workspace_member', ?, ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          input.actor,
+          input.email,
+          input.requestId,
+          JSON.stringify({ role: input.role }),
+          now,
+        ),
+    ]);
+    const row = await this.db
+      .prepare('SELECT * FROM workspace_members WHERE email = ?')
+      .bind(input.email)
+      .first<WorkspaceMemberRow>();
+    if (!row) {
+      throw new AppError(500, 'MEMBER_UPSERT_FAILED', 'The workspace member could not be saved.');
+    }
+    return toWorkspaceMember(row);
+  }
+
+  async updateMemberRole(
+    id: string,
+    role: WorkspaceRole,
+    actor: string,
+    requestId: string,
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db.batch([
+      this.db
+        .prepare(
+          "UPDATE workspace_members SET role = ?, updated_at = ? WHERE id = ? AND status = 'active'",
+        )
+        .bind(role, now, id),
+      this.db
+        .prepare(
+          `INSERT INTO audit_events (
+            id, actor, action, target_type, target_id, request_id, metadata_json, created_at
+          ) VALUES (?, ?, 'member.role.updated', 'workspace_member', ?, ?, ?, ?)`,
+        )
+        .bind(crypto.randomUUID(), actor, id, requestId, JSON.stringify({ role }), now),
+    ]);
+  }
+
+  async removeMember(id: string, actor: string, requestId: string): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db.batch([
+      this.db
+        .prepare("UPDATE workspace_members SET status = 'removed', updated_at = ? WHERE id = ?")
+        .bind(now, id),
+      this.db
+        .prepare(
+          `INSERT INTO audit_events (
+            id, actor, action, target_type, target_id, request_id, metadata_json, created_at
+          ) VALUES (?, ?, 'member.removed', 'workspace_member', ?, ?, ?, ?)`,
+        )
+        .bind(crypto.randomUUID(), actor, id, requestId, JSON.stringify({}), now),
+    ]);
+  }
+
+  async listAccessGroups(): Promise<AccessGroupRow[]> {
+    const result = await this.db.prepare('SELECT * FROM access_groups').all<AccessGroupRow>();
+    return result.results;
+  }
+
+  async upsertAccessGroup(
+    role: WorkspaceRole,
+    state: { cloudflareId: string | null; syncedAt: string | null; syncError: string | null },
+  ): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO access_groups (role, cloudflare_id, synced_at, sync_error, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(role) DO UPDATE SET
+           cloudflare_id = excluded.cloudflare_id,
+           synced_at = excluded.synced_at,
+           sync_error = excluded.sync_error,
+           updated_at = excluded.updated_at`,
+      )
+      .bind(role, state.cloudflareId, state.syncedAt, state.syncError, new Date().toISOString())
+      .run();
   }
 
   async saveGitHubInstallation(input: {

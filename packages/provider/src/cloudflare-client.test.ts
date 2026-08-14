@@ -812,6 +812,59 @@ describe('CloudflareClient', () => {
     );
   });
 
+  it('lists Zero Trust Access groups and filters them by name', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(response([{ id: 'group-id', name: 'WorkerDeck - Owners' }]));
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(client.listAccessGroups('WorkerDeck - Owners')).resolves.toEqual([
+      { id: 'group-id', name: 'WorkerDeck - Owners' },
+    ]);
+    expect(fetcher.mock.calls[0]?.[0]).toContain(
+      '/accounts/account/access/groups?name=WorkerDeck%20-%20Owners',
+    );
+  });
+
+  it('creates an Access group with email include rules', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(response({ id: 'group-id', name: 'WorkerDeck - Owners' }));
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(
+      client.createAccessGroup('WorkerDeck - Owners', ['a@example.com', 'b@example.com']),
+    ).resolves.toEqual({ id: 'group-id', name: 'WorkerDeck - Owners' });
+    const [url, init] = fetcher.mock.calls[0]!;
+    expect(url).toContain('/accounts/account/access/groups');
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse(init?.body as string)).toEqual({
+      name: 'WorkerDeck - Owners',
+      include: [{ email: { email: 'a@example.com' } }, { email: { email: 'b@example.com' } }],
+    });
+  });
+
+  it('updates and deletes Access groups by provider id', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(response({ id: 'group-id', name: 'WorkerDeck - Owners' }))
+      .mockResolvedValueOnce(response({ id: 'group-id' }));
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(client.updateAccessGroup('group-id', ['a@example.com'])).resolves.toBeUndefined();
+    const [updateUrl, updateInit] = fetcher.mock.calls[0]!;
+    expect(updateUrl).toContain('/accounts/account/access/groups/group-id');
+    expect(updateInit?.method).toBe('PUT');
+    expect(JSON.parse(updateInit?.body as string)).toEqual({
+      include: [{ email: { email: 'a@example.com' } }],
+    });
+
+    await expect(client.deleteAccessGroup('group-id')).resolves.toBeUndefined();
+    const [deleteUrl, deleteInit] = fetcher.mock.calls[1]!;
+    expect(deleteUrl).toContain('/accounts/account/access/groups/group-id');
+    expect(deleteInit?.method).toBe('DELETE');
+  });
+
   it('verifies D1 Time Travel bookmarks without invoking restore', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response({ bookmark: 'bookmark-id' }));
     const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });

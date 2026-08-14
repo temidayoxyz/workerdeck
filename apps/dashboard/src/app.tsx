@@ -30,6 +30,7 @@ import {
 import { ProjectsPage } from './pages/projects';
 import { ResourcesPage } from './pages/resources';
 import { SettingsPage } from './pages/settings';
+import { TeamPage } from './pages/team';
 
 export function App(): React.JSX.Element {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -244,6 +245,7 @@ export function App(): React.JSX.Element {
         <Route path="backups" element={<BackupsPage summary={summary} />} />
         <Route path="usage" element={<UsagePage summary={summary} />} />
         <Route path="settings" element={<SettingsPage summary={summary} />} />
+        <Route path="team" element={<TeamPage summary={summary} />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
