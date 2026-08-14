@@ -5,6 +5,7 @@ import {
   createResourceInputSchema,
   environmentVariableKeySchema,
   rollbackDeploymentInputSchema,
+  setTrafficInputSchema,
   repositoryInspectionSchema,
   upsertEnvironmentVariableInputSchema,
   type DashboardSummary,
@@ -14,6 +15,7 @@ import {
 import { CloudflareApiError, CloudflareClient } from '@workerdeck/provider';
 import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
+import { z } from 'zod';
 import { authenticate } from './auth';
 import {
   managedBuildCommand,
@@ -1270,6 +1272,73 @@ app.post('/api/v1/deployments/:deploymentId/rollback', async (context) => {
     await repository.removeIdempotencyKey(idempotencyKey);
     throw error;
   }
+});
+
+app.get('/api/v1/projects/:projectId/environments/:environmentId/traffic', async (context) => {
+  const target = await new Repository(context.env.DB).getDeploymentTarget(
+    context.req.param('projectId'),
+    context.req.param('environmentId'),
+  );
+  const deployments = await cloudflareClient(context).listDeployments(target.workerName);
+  return context.json({ data: deployments[0] ?? null, requestId: context.get('requestId') });
+});
+
+app.post('/api/v1/projects/:projectId/environments/:environmentId/traffic', async (context) => {
+  const parsed = setTrafficInputSchema.safeParse(await context.req.json().catch(() => null));
+  if (!parsed.success) {
+    throw new AppError(
+      422,
+      'INVALID_TRAFFIC',
+      'Traffic percentages must total 100 and reference valid Worker versions.',
+      parsed.error.flatten(),
+    );
+  }
+  const repository = new Repository(context.env.DB);
+  const target = await repository.getDeploymentTarget(
+    context.req.param('projectId'),
+    context.req.param('environmentId'),
+  );
+  if (target.environmentKind !== 'production') {
+    throw new AppError(
+      409,
+      'PREVIEW_TRAFFIC_LOCKED',
+      'Traffic routing applies to production only.',
+    );
+  }
+  await cloudflareClient(context).setVersionTraffic(
+    target.workerName,
+    parsed.data.versions,
+    parsed.data.message ?? 'WorkerDeck traffic update',
+  );
+  return context.json({ data: { updated: true }, requestId: context.get('requestId') });
+});
+
+app.put('/api/v1/projects/:projectId/environments/:environmentId/subdomain', async (context) => {
+  const parsed = z
+    .object({ enabled: z.boolean() })
+    .safeParse(await context.req.json().catch(() => null));
+  if (!parsed.success) {
+    throw new AppError(422, 'INVALID_SUBDOMAIN', 'Choose whether the system subdomain is enabled.');
+  }
+  const repository = new Repository(context.env.DB);
+  const target = await repository.getDeploymentTarget(
+    context.req.param('projectId'),
+    context.req.param('environmentId'),
+  );
+  await cloudflareClient(context).setWorkerSubdomainEnabled(target.workerName, parsed.data.enabled);
+  if (parsed.data.enabled) {
+    const subdomain = await cloudflareClient(context).getWorkersSubdomain();
+    await repository.saveEnvironmentUrl(
+      target.environmentId,
+      `https://${target.workerName}.${subdomain}.workers.dev`,
+    );
+  } else {
+    await repository.clearEnvironmentUrl(target.environmentId);
+  }
+  return context.json({
+    data: { enabled: parsed.data.enabled },
+    requestId: context.get('requestId'),
+  });
 });
 
 app.get('/api/v1/cloudflare/connection', async (context) => {

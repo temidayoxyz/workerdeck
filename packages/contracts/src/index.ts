@@ -251,6 +251,30 @@ export const rollbackDeploymentInputSchema = z.object({
   confirmation: z.literal('ROLLBACK'),
 });
 
+export const setTrafficInputSchema = z
+  .object({
+    versions: z
+      .array(
+        z.object({
+          versionId: z.string().min(1).max(255),
+          percentage: z.number().int().min(0).max(100),
+        }),
+      )
+      .min(1)
+      .max(4),
+    message: z.string().trim().max(500).optional(),
+  })
+  .superRefine((input, context) => {
+    const total = input.versions.reduce((sum, version) => sum + version.percentage, 0);
+    if (total !== 100) {
+      context.addIssue({
+        code: 'custom',
+        path: ['versions'],
+        message: 'Traffic percentages must total 100.',
+      });
+    }
+  });
+
 export const environmentVariableKeySchema = z
   .string()
   .trim()
@@ -434,6 +458,7 @@ export type CreateResourceInput = z.infer<typeof createResourceInputSchema>;
 export type WorkerDomain = z.infer<typeof domainSchema>;
 export type AttachDomainInput = z.infer<typeof attachDomainInputSchema>;
 export type RollbackDeploymentInput = z.infer<typeof rollbackDeploymentInputSchema>;
+export type SetTrafficInput = z.infer<typeof setTrafficInputSchema>;
 export type EnvironmentVariable = z.infer<typeof environmentVariableSchema>;
 export type EnvironmentVariables = z.infer<typeof environmentVariablesSchema>;
 export type EnvironmentVariableTarget = z.infer<typeof environmentVariableTargetSchema>;

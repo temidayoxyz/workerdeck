@@ -35,6 +35,7 @@ import {
   type UsageSummary,
   type WorkerAnalytics,
 } from '@workerdeck/contracts';
+import { z } from 'zod';
 import { demoSummary } from './fixtures';
 
 export class ApiError extends Error {
@@ -378,6 +379,60 @@ export async function detachProjectDomain(
   await request(
     `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/domains/${encodeURIComponent(domainId)}`,
     { method: 'DELETE' },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return envelope.data;
+    },
+  );
+}
+
+const trafficDeploymentSchema = z
+  .object({
+    id: z.string(),
+    versions: z.array(z.object({ percentage: z.number(), versionId: z.string() })),
+  })
+  .nullable();
+
+export async function getProjectTraffic(
+  projectId: string,
+  environmentId: string,
+): Promise<{ id: string; versions: Array<{ percentage: number; versionId: string }> } | null> {
+  if (isDemoMode()) return null;
+  return request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/traffic`,
+    { method: 'GET' },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return trafficDeploymentSchema.parse(envelope.data);
+    },
+  );
+}
+
+export async function setProjectTraffic(
+  projectId: string,
+  environmentId: string,
+  versions: Array<{ versionId: string; percentage: number }>,
+): Promise<void> {
+  if (isDemoMode()) return;
+  await request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/traffic`,
+    { method: 'POST', body: JSON.stringify({ versions }) },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return envelope.data;
+    },
+  );
+}
+
+export async function setSystemDomainEnabled(
+  projectId: string,
+  environmentId: string,
+  enabled: boolean,
+): Promise<void> {
+  if (isDemoMode()) return;
+  await request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/subdomain`,
+    { method: 'PUT', body: JSON.stringify({ enabled }) },
     (value) => {
       const envelope = value as ApiSuccess<unknown>;
       return envelope.data;

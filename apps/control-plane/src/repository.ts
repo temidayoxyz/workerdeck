@@ -1319,6 +1319,16 @@ export class Repository {
       .run();
   }
 
+  async clearEnvironmentUrl(environmentId: string): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db
+      .prepare(
+        'UPDATE environments SET url = NULL, updated_at = ? WHERE id = ? AND url IS NOT NULL',
+      )
+      .bind(now, environmentId)
+      .run();
+  }
+
   async recordEnvironmentVariableAudit(input: {
     action: 'created' | 'updated' | 'deleted';
     projectId: string;

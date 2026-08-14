@@ -39,6 +39,9 @@ import {
   deleteEnvironmentVariable,
   attachProjectDomain,
   detachProjectDomain,
+  setSystemDomainEnabled,
+  getProjectTraffic,
+  setProjectTraffic,
   getBuildLogs,
   getEnvironmentVariables,
   getManagedResources,
@@ -254,10 +257,35 @@ export function ProjectDeploymentsPage({
   const { deploymentDeleted } = useOutletContext<ShellContext>();
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [traffic, setTraffic] = useState<{
+    id: string;
+    versions: Array<{ percentage: number; versionId: string }>;
+  } | null>(null);
+  const [trafficInputs, setTrafficInputs] = useState<Record<string, string>>({});
+  const [trafficSaving, setTrafficSaving] = useState(false);
+  const [trafficError, setTrafficError] = useState<string | null>(null);
   const project = summary?.projects.find((candidate) => candidate.id === projectId);
   const environment = summary?.environments.find(
     (candidate) => candidate.projectId === projectId && candidate.kind === 'production',
   );
+  useEffect(() => {
+    if (!environment) return;
+    let active = true;
+    void getProjectTraffic(projectId ?? '', environment.id)
+      .then((value) => {
+        if (!active || !value) return;
+        setTraffic(value);
+        setTrafficInputs(
+          Object.fromEntries(
+            value.versions.map((version) => [version.versionId, String(version.percentage)]),
+          ),
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [environment, projectId]);
   if (!project) return <MissingProject />;
   const deployments = summary?.deployments.filter((item) => item.projectId === project.id) ?? [];
   return (
@@ -339,6 +367,85 @@ export function ProjectDeploymentsPage({
             </span>
           </div>
         ))}
+      </section>
+      <section className="panel traffic-panel">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Production traffic</span>
+            <h2>Version routing</h2>
+          </div>
+          {traffic ? (
+            <button
+              className="button button--primary"
+              type="button"
+              disabled={trafficSaving}
+              onClick={() => {
+                if (!environment) return;
+                const versions = traffic.versions.map((version) => ({
+                  versionId: version.versionId,
+                  percentage: Number(trafficInputs[version.versionId] ?? version.percentage),
+                }));
+                if (versions.reduce((sum, version) => sum + version.percentage, 0) !== 100) {
+                  setTrafficError('Traffic percentages must total 100.');
+                  return;
+                }
+                setTrafficSaving(true);
+                setTrafficError(null);
+                void setProjectTraffic(project.id, environment.id, versions)
+                  .catch((reason: unknown) =>
+                    setTrafficError(
+                      reason instanceof Error ? reason.message : 'Traffic could not be updated.',
+                    ),
+                  )
+                  .finally(() => setTrafficSaving(false));
+              }}
+            >
+              {trafficSaving ? 'Applyingâ€¦' : 'Apply traffic'}
+            </button>
+          ) : null}
+        </div>
+        {traffic ? (
+          <div className="traffic-list">
+            {traffic.versions.map((version) => {
+              const deployment = deployments.find(
+                (candidate) => candidate.workerVersionId === version.versionId,
+              );
+              return (
+                <div className="traffic-row" key={version.versionId}>
+                  <span className="traffic-commit">
+                    <strong>
+                      {deployment
+                        ? (deployment.gitCommitMessage ?? shortSha(deployment.gitCommitSha))
+                        : `Version ${version.versionId.slice(0, 7)}`}
+                    </strong>
+                    <small>
+                      {deployment ? shortSha(deployment.gitCommitSha) : 'Provider version'}
+                    </small>
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={trafficInputs[version.versionId] ?? String(version.percentage)}
+                    onChange={(event) =>
+                      setTrafficInputs((current) => ({
+                        ...current,
+                        [version.versionId]: event.target.value,
+                      }))
+                    }
+                    aria-label="Traffic percentage"
+                  />
+                  <span>%</span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="muted-copy traffic-empty">
+            Traffic routing appears after the first production deployment.
+          </p>
+        )}
+        {trafficError ? <div className="inline-alert">{trafficError}</div> : null}
       </section>
     </div>
   );
@@ -571,6 +678,15 @@ export function ProjectLogsPage({
         setError(reason instanceof Error ? reason.message : 'Build logs could not load.'),
       );
   }, [latest]);
+  useEffect(() => {
+    if (!latest || !['queued', 'building', 'deploying'].includes(latest.status)) return;
+    const timer = window.setInterval(() => {
+      void getBuildLogs(latest.id)
+        .then(setLogs)
+        .catch(() => undefined);
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [latest]);
   if (!project) return <MissingProject />;
   return (
     <div className="project-page">
@@ -776,9 +892,16 @@ export function ProjectDomainsPage({
   const [domainError, setDomainError] = useState<string | null>(null);
   const [domainSubmitting, setDomainSubmitting] = useState(false);
   const [detaching, setDetaching] = useState<string | null>(null);
+  const [subdomainEnabled, setSubdomainEnabled] = useState<boolean | null>(null);
+  const [subdomainSaving, setSubdomainSaving] = useState(false);
   useEffect(() => {
     if (!environmentId && productionEnvironment) setEnvironmentId(productionEnvironment.id);
   }, [environmentId, productionEnvironment]);
+  useEffect(() => {
+    if (subdomainEnabled === null && productionEnvironment) {
+      setSubdomainEnabled(Boolean(productionEnvironment.url));
+    }
+  }, [productionEnvironment, subdomainEnabled]);
   useEffect(() => {
     if (!projectId || !environmentId) return;
     let active = true;
@@ -866,9 +989,11 @@ export function ProjectDomainsPage({
             <Globe2 size={21} />
             <span>
               <strong>
-                {productionEnvironment?.url
-                  ? new URL(productionEnvironment.url).hostname
-                  : 'Not assigned yet'}
+                {subdomainEnabled === false
+                  ? 'System domain disabled'
+                  : productionEnvironment?.url
+                    ? new URL(productionEnvironment.url).hostname
+                    : 'Not assigned yet'}
               </strong>
               <small>Cloudflare-managed hostname and TLS</small>
             </span>
@@ -878,6 +1003,34 @@ export function ProjectDomainsPage({
               </a>
             ) : null}
           </div>
+          {productionEnvironment ? (
+            <div className="domain-route-footer">
+              <span>{subdomainEnabled ? 'workers.dev enabled' : 'workers.dev disabled'}</span>
+              <button
+                className="button button--secondary"
+                type="button"
+                disabled={subdomainSaving}
+                onClick={() => {
+                  const next = !subdomainEnabled;
+                  setSubdomainEnabled(next);
+                  setSubdomainSaving(true);
+                  setDomainError(null);
+                  void setSystemDomainEnabled(project.id, productionEnvironment.id, next)
+                    .catch((reason: unknown) => {
+                      setSubdomainEnabled(!next);
+                      setDomainError(
+                        reason instanceof Error
+                          ? reason.message
+                          : 'The system domain could not be updated.',
+                      );
+                    })
+                    .finally(() => setSubdomainSaving(false));
+                }}
+              >
+                {subdomainEnabled ? 'Disable system domain' : 'Enable system domain'}
+              </button>
+            </div>
+          ) : null}
         </section>
         <aside className="panel detail-panel">
           <span className="eyebrow">Custom domains</span>

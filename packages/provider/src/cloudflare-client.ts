@@ -327,6 +327,15 @@ export class CloudflareClient {
     );
   }
 
+  async setWorkerSubdomainEnabled(scriptName: string, enabled: boolean): Promise<void> {
+    const accountId = this.#requireAccountId();
+    await this.#request(
+      `/accounts/${accountId}/workers/scripts/${encodeURIComponent(scriptName)}/subdomain`,
+      z.unknown(),
+      { method: 'PUT', body: JSON.stringify({ enabled, previews_enabled: enabled }) },
+    );
+  }
+
   async getWorkersSubdomain(): Promise<string> {
     const accountId = this.#requireAccountId();
     const result = await this.#request(
@@ -882,6 +891,32 @@ export class CloudflareClient {
         body: JSON.stringify({
           strategy: 'percentage',
           versions: [{ version_id: versionId, percentage: 100 }],
+          annotations: {
+            'workers/message': message.slice(0, 1000),
+            'workers/triggered_by': 'workerdeck',
+          },
+        }),
+      },
+    );
+  }
+
+  async setVersionTraffic(
+    scriptName: string,
+    versions: Array<{ versionId: string; percentage: number }>,
+    message: string,
+  ): Promise<void> {
+    const accountId = this.#requireAccountId();
+    await this.#request(
+      `/accounts/${accountId}/workers/scripts/${encodeURIComponent(scriptName)}/deployments`,
+      z.unknown(),
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          strategy: 'percentage',
+          versions: versions.map((version) => ({
+            version_id: version.versionId,
+            percentage: version.percentage,
+          })),
           annotations: {
             'workers/message': message.slice(0, 1000),
             'workers/triggered_by': 'workerdeck',
