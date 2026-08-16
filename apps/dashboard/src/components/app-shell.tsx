@@ -1,24 +1,24 @@
 import type { DashboardSummary, Project } from '@workerdeck/contracts';
 import {
   Activity,
-  Bell,
   Boxes,
   ChartNoAxesColumnIncreasing,
-  ChevronDown,
   CircleHelp,
   Command,
   DatabaseBackup,
   Gauge,
   Globe2,
   LayoutGrid,
+  Menu,
   Moon,
   Plus,
   Rocket,
   Settings,
   Sun,
   Users,
+  X,
 } from './icon';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '../lib/theme';
 import { Brand } from './brand';
@@ -70,9 +70,12 @@ export function AppShell({
   onDeploymentDeleted,
 }: AppShellProps): React.JSX.Element {
   const [commandOpen, setCommandOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
   const [theme, toggleTheme] = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
+
+  const closeNavigation = useCallback(() => setNavOpen(false), []);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -80,10 +83,22 @@ export function AppShell({
         event.preventDefault();
         setCommandOpen(true);
       }
+      if (event.key === 'Escape') closeNavigation();
     };
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
-  }, []);
+  }, [closeNavigation]);
+
+  // Route changes always close the drawer.
+  useEffect(() => {
+    setNavOpen(false);
+  }, [location.pathname]);
+
+  // Lock body scroll only while the drawer is open.
+  useEffect(() => {
+    document.body.classList.toggle('drawer-open', navOpen);
+    return () => document.body.classList.remove('drawer-open');
+  }, [navOpen]);
 
   const project = summary?.projects.find((candidate) =>
     location.pathname.startsWith(`/projects/${candidate.id}`),
@@ -97,21 +112,33 @@ export function AppShell({
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <div
+        className={`sidebar-scrim${navOpen ? ' sidebar-scrim--open' : ''}`}
+        aria-hidden="true"
+        onClick={closeNavigation}
+      />
+      <aside className={`sidebar${navOpen ? ' sidebar--open' : ''}`} id="app-navigation">
         <div className="sidebar-brand">
           <Brand />
+          <button
+            className="topbar-icon drawer-close"
+            type="button"
+            aria-label="Close navigation"
+            onClick={closeNavigation}
+          >
+            <X size={18} />
+          </button>
         </div>
-        <button className="workspace-switcher" type="button">
+        <div className="workspace-switcher">
           <span className="workspace-avatar">WD</span>
           <span>
             <strong>{summary?.account.name ?? 'WorkerDeck'}</strong>
             <small>Cloudflare workspace</small>
           </span>
-          <ChevronDown size={15} />
-        </button>
+        </div>
         <nav className="primary-nav" aria-label="Primary navigation">
           {primaryNavigation.map(({ label, to, icon: Icon }) => (
-            <NavLink key={to} to={to} end={to === '/'} aria-label={label}>
+            <NavLink key={to} to={to} end={to === '/'} aria-label={label} onClick={closeNavigation}>
               <Icon size={18} strokeWidth={1.8} />
               <span>{label}</span>
               <i aria-hidden="true" />
@@ -119,11 +146,11 @@ export function AppShell({
           ))}
         </nav>
         <nav className="secondary-nav" aria-label="Account navigation">
-          <NavLink to="/usage">
+          <NavLink to="/usage" onClick={closeNavigation}>
             <ChartNoAxesColumnIncreasing size={18} />
             <span>Usage</span>
           </NavLink>
-          <NavLink to="/settings">
+          <NavLink to="/settings" onClick={closeNavigation}>
             <Settings size={18} />
             <span>Settings</span>
           </NavLink>
@@ -147,6 +174,9 @@ export function AppShell({
 
       <main className="main-area">
         <header className="topbar">
+          <div className="topbar-brand">
+            <Brand />
+          </div>
           <div className="breadcrumb">
             <span className="breadcrumb-workspace">{summary?.account.name ?? 'Workspace'}</span>
             <span>/</span>
@@ -167,20 +197,22 @@ export function AppShell({
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>
             <button
-              className="topbar-icon notification-button"
-              type="button"
-              aria-label="Notifications"
-            >
-              <Bell size={19} />
-              <span />
-            </button>
-            <button
               className="button button--primary button--compact"
               type="button"
               onClick={() => void navigate('/projects/new')}
             >
               <Plus size={17} />
               New project
+            </button>
+            <button
+              className="topbar-icon menu-button"
+              type="button"
+              aria-expanded={navOpen}
+              aria-controls="app-navigation"
+              aria-label="Open navigation"
+              onClick={() => setNavOpen(true)}
+            >
+              <Menu size={19} />
             </button>
           </div>
         </header>

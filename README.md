@@ -121,6 +121,37 @@ for normal continuous delivery.
 See the [production installation guide](./docs/installation.md) for the required Cloudflare values,
 least-privilege token scopes, GitHub App setup, and verification checklist.
 
+### Deploy to Cloudflare
+
+Build the dashboard and deploy the control-plane Worker (it serves the dashboard as static
+assets, so one Worker is the whole installation):
+
+```bash
+npm run deploy
+```
+
+Before the first production deploy you need three values in
+[`apps/control-plane/wrangler.jsonc`](./apps/control-plane/wrangler.jsonc):
+
+1. Create the metadata database and paste its id into the `d1_databases` entry:
+   `npx wrangler d1 create workerdeck`
+2. Apply migrations remotely: `npx wrangler d1 migrations apply DB --remote`
+3. Store the Worker secrets (least-privilege scopes are listed in the installation guide):
+   `npx wrangler secret put CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_BUILD_TOKEN`, and
+   `GITHUB_APP_PRIVATE_KEY`.
+4. Switch the `vars` to production values (`ENVIRONMENT: production`,
+   `AUTH_MODE: cloudflare-access`, `DASHBOARD_ORIGIN` set to the dashboard origin) and put the
+   Worker behind Cloudflare Access — development authentication only works on localhost.
+
+`npm run deploy:dry-run` validates the whole build and Worker configuration without uploading.
+
+WorkerDeck also ships an interactive installer that generates the production configuration,
+verifies the tokens, and pipes the secrets to Wrangler for you:
+
+```bash
+npx workerdeck install
+```
+
 The installer accepts the Cloudflare account and Access identifiers plus the WorkerDeck GitHub App ID,
 slug, and private-key file. It prompts interactively for the two Cloudflare token values, verifies
 them, derives the non-secret build-token ID automatically, and pipes all secrets directly to Wrangler.

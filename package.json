@@ -31,6 +31,8 @@
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "deploy": "npm run build -w @workerdeck/dashboard && npm run deploy -w @workerdeck/control-plane",
+    "deploy:dry-run": "npm run build -w @workerdeck/dashboard && npm run build -w @workerdeck/control-plane"
   }
 }

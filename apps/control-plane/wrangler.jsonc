@@ -12,6 +12,14 @@
   "triggers": {
     "crons": ["* * * * *"],
   },
+  // Local development defaults. The interactive installer (`npx @workerdeck/cli`)
+  // generates a fully populated production config with your account, D1, and
+  // token identifiers. To deploy manually instead:
+  //   1. `npx wrangler d1 create workerdeck` and paste the id below.
+  //   2. Set the three Worker secrets (see docs/installation.md):
+  //      CLOUDFLARE_API_TOKEN, CLOUDFLARE_BUILD_TOKEN, GITHUB_APP_PRIVATE_KEY.
+  //   3. Put the Worker behind Cloudflare Access, set DASHBOARD_ORIGIN to the
+  //      dashboard origin, then run `npm run deploy` from the repository root.
   "vars": {
     "ENVIRONMENT": "development",
     "AUTH_MODE": "development",
@@ -23,6 +31,8 @@
     {
       "binding": "DB",
       "database_name": "workerdeck",
+      // Required for remote deploys. Local `wrangler dev` ignores it.
+      // "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations",
     },
   ],

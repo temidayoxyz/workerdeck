@@ -10,8 +10,14 @@ import {
 import { useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import type { ShellContext } from '../components/app-shell';
+import { ConfirmDialog } from '../components/confirm-dialog';
 import { DeploymentStatus } from '../components/status';
 import { relativeTime, shortSha } from '../lib/format';
+
+interface PendingAction {
+  kind: 'rollback' | 'delete';
+  deploymentId: string;
+}
 
 export function DeploymentsPage({
   summary,
@@ -23,7 +29,41 @@ export function DeploymentsPage({
   const [rollingBack, setRollingBack] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [rollbackError, setRollbackError] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingAction | null>(null);
   const { deploymentDeleted } = useOutletContext<ShellContext>();
+  const pendingDeployment = summary?.deployments.find(
+    (deployment) => deployment.id === pending?.deploymentId,
+  );
+  const pendingProject = pendingDeployment
+    ? summary?.projects.find((candidate) => candidate.id === pendingDeployment.projectId)
+    : undefined;
+
+  const runPending = (): void => {
+    if (!pending) return;
+    if (pending.kind === 'rollback') {
+      setRollingBack(pending.deploymentId);
+      setRollbackError(null);
+      void onRollback(pending.deploymentId)
+        .catch((error: unknown) => {
+          setRollbackError(
+            error instanceof Error ? error.message : 'The rollback could not finish.',
+          );
+        })
+        .finally(() => setRollingBack(null));
+    } else {
+      setDeleting(pending.deploymentId);
+      setRollbackError(null);
+      void deploymentDeleted(pending.deploymentId)
+        .catch((error: unknown) =>
+          setRollbackError(
+            error instanceof Error ? error.message : 'The deployment could not be deleted.',
+          ),
+        )
+        .finally(() => setDeleting(null));
+    }
+    setPending(null);
+  };
+
   return (
     <div className="standard-page">
       <section className="page-intro page-intro--compact">
@@ -104,23 +144,7 @@ export function DeploymentsPage({
                       type="button"
                       disabled={rollingBack === deployment.id}
                       aria-label={`Roll back to ${deployment.gitCommitSha ?? deployment.workerVersionId}`}
-                      onClick={() => {
-                        if (
-                          !window.confirm('Promote this Worker version to 100% production traffic?')
-                        )
-                          return;
-                        setRollingBack(deployment.id);
-                        setRollbackError(null);
-                        void onRollback(deployment.id)
-                          .catch((error: unknown) => {
-                            setRollbackError(
-                              error instanceof Error
-                                ? error.message
-                                : 'The rollback could not finish.',
-                            );
-                          })
-                          .finally(() => setRollingBack(null));
-                      }}
+                      onClick={() => setPending({ kind: 'rollback', deploymentId: deployment.id })}
                     >
                       <RotateCcw size={13} />
                       {rollingBack === deployment.id ? 'Rolling back...' : 'Rollback'}
@@ -143,25 +167,7 @@ export function DeploymentsPage({
                       deleting === deployment.id ||
                       ['queued', 'building', 'deploying'].includes(deployment.status)
                     }
-                    onClick={() => {
-                      if (
-                        !window.confirm(
-                          'Delete this deployment record? WorkerDeck will also remove its historical Cloudflare Worker deployment when one exists.',
-                        )
-                      )
-                        return;
-                      setDeleting(deployment.id);
-                      setRollbackError(null);
-                      void deploymentDeleted(deployment.id)
-                        .catch((error: unknown) =>
-                          setRollbackError(
-                            error instanceof Error
-                              ? error.message
-                              : 'The deployment could not be deleted.',
-                          ),
-                        )
-                        .finally(() => setDeleting(null));
-                    }}
+                    onClick={() => setPending({ kind: 'delete', deploymentId: deployment.id })}
                   >
                     <Trash2 size={15} />
                   </button>
@@ -171,6 +177,20 @@ export function DeploymentsPage({
           );
         })}
       </section>
+      <ConfirmDialog
+        open={pending !== null}
+        danger={pending?.kind === 'delete'}
+        busy={rollingBack !== null || deleting !== null}
+        title={pending?.kind === 'rollback' ? 'Promote to production?' : 'Delete this deployment?'}
+        body={
+          pending?.kind === 'rollback'
+            ? `Version ${shortSha(pendingDeployment?.gitCommitSha ?? null)} of ${pendingProject?.name ?? 'this project'} will receive 100% of production traffic.`
+            : 'WorkerDeck will also remove its historical Cloudflare Worker deployment when one exists.'
+        }
+        confirmLabel={pending?.kind === 'rollback' ? 'Promote version' : 'Delete deployment'}
+        onConfirm={runPending}
+        onCancel={() => setPending(null)}
+      />
     </div>
   );
 }

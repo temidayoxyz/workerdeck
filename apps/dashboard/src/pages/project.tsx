@@ -1,4 +1,5 @@
 import type {
+  EnvironmentVariable,
   DashboardSummary,
   EmailRoutingData,
   ManagedResource,
@@ -37,6 +38,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import type { ShellContext } from '../components/app-shell';
+import { ConfirmDialog } from '../components/confirm-dialog';
 import { DeploymentRail } from '../components/deployment-rail';
 import { ProjectHeader } from '../components/project-header';
 import { DeploymentStatus } from '../components/status';
@@ -374,6 +376,7 @@ export function ProjectDeploymentsPage({
   const { deploymentDeleted } = useOutletContext<ShellContext>();
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [traffic, setTraffic] = useState<{
     id: string;
     versions: Array<{ percentage: number; versionId: string }>;
@@ -477,25 +480,7 @@ export function ProjectDeploymentsPage({
                   deleting === deployment.id ||
                   ['queued', 'building', 'deploying'].includes(deployment.status)
                 }
-                onClick={() => {
-                  if (
-                    !window.confirm(
-                      'Delete this deployment record? WorkerDeck will also remove its historical Cloudflare Worker deployment when one exists. Cloudflare build logs follow Cloudflare retention.',
-                    )
-                  )
-                    return;
-                  setDeleting(deployment.id);
-                  setDeleteError(null);
-                  void deploymentDeleted(deployment.id)
-                    .catch((reason: unknown) =>
-                      setDeleteError(
-                        reason instanceof Error
-                          ? reason.message
-                          : 'The deployment could not be deleted.',
-                      ),
-                    )
-                    .finally(() => setDeleting(null));
-                }}
+                onClick={() => setConfirmDelete(deployment.id)}
               >
                 <Trash2 size={16} />
               </button>
@@ -582,6 +567,28 @@ export function ProjectDeploymentsPage({
         )}
         {trafficError ? <div className="inline-alert">{trafficError}</div> : null}
       </section>
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        danger
+        busy={deleting !== null}
+        title="Delete this deployment?"
+        body="WorkerDeck will also remove its historical Cloudflare Worker deployment when one exists. Cloudflare build logs follow Cloudflare retention."
+        confirmLabel="Delete deployment"
+        onConfirm={() => {
+          if (!confirmDelete) return;
+          setDeleting(confirmDelete);
+          setConfirmDelete(null);
+          setDeleteError(null);
+          void deploymentDeleted(confirmDelete)
+            .catch((reason: unknown) =>
+              setDeleteError(
+                reason instanceof Error ? reason.message : 'The deployment could not be deleted.',
+              ),
+            )
+            .finally(() => setDeleting(null));
+        }}
+        onCancel={() => setConfirmDelete(null)}
+      />
     </div>
   );
 }
@@ -603,6 +610,7 @@ export function ProjectVariablesPage({
   );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [pendingVariable, setPendingVariable] = useState<EnvironmentVariable | null>(null);
   useEffect(() => {
     if (!project || !environment) return;
     void getEnvironmentVariables(project.id, environment.id)
@@ -696,38 +704,7 @@ export function ProjectVariablesPage({
                   type="button"
                   className="row-action danger-action"
                   aria-label={`Delete ${variable.key}`}
-                  onClick={() => {
-                    if (
-                      !environment ||
-                      !window.confirm(
-                        `Delete ${variable.key} from ${variable.target === 'build' ? 'builds' : 'the Worker runtime'}?`,
-                      )
-                    )
-                      return;
-                    void deleteEnvironmentVariable(
-                      project.id,
-                      environment.id,
-                      variable.key,
-                      variable.target,
-                    )
-                      .then(() =>
-                        setData((current) =>
-                          current
-                            ? {
-                                ...current,
-                                variables: current.variables.filter((item) => item !== variable),
-                              }
-                            : current,
-                        ),
-                      )
-                      .catch((reason: unknown) =>
-                        setError(
-                          reason instanceof Error
-                            ? reason.message
-                            : 'Variable could not be deleted.',
-                        ),
-                      );
-                  }}
+                  onClick={() => setPendingVariable(variable)}
                 >
                   <Trash2 size={15} />
                 </button>
@@ -779,6 +756,37 @@ export function ProjectVariablesPage({
           </button>
         </form>
       </div>
+      <ConfirmDialog
+        open={pendingVariable !== null}
+        danger
+        title={pendingVariable ? `Delete ${pendingVariable.key}?` : ''}
+        body={`${
+          pendingVariable?.target === 'build'
+            ? 'Future builds will no longer receive this value.'
+            : 'The Worker runtime will no longer receive this secret.'
+        }`}
+        confirmLabel="Delete variable"
+        onConfirm={() => {
+          const variable = pendingVariable;
+          if (!variable || !environment) return;
+          setPendingVariable(null);
+          void deleteEnvironmentVariable(project.id, environment.id, variable.key, variable.target)
+            .then(() =>
+              setData((current) =>
+                current
+                  ? {
+                      ...current,
+                      variables: current.variables.filter((item) => item !== variable),
+                    }
+                  : current,
+              ),
+            )
+            .catch((reason: unknown) =>
+              setError(reason instanceof Error ? reason.message : 'Variable could not be deleted.'),
+            );
+        }}
+        onCancel={() => setPendingVariable(null)}
+      />
     </div>
   );
 }
