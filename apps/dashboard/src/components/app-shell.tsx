@@ -183,7 +183,12 @@ export function AppShell({
             <strong>{currentPage}</strong>
           </div>
           <div className="topbar-actions">
-            <button className="command-button" type="button" onClick={() => setCommandOpen(true)}>
+            <button
+              className="command-button"
+              type="button"
+              aria-label="Search projects and deployments"
+              onClick={() => setCommandOpen(true)}
+            >
               <Command size={16} />
               <span>Search projects, deployments…</span>
               <kbd>⌘K</kbd>

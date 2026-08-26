@@ -73,9 +73,7 @@ export function App(): React.JSX.Element {
       .join(',') ?? '';
 
   useEffect(() => {
-    if (!activeDeploymentIds || new URLSearchParams(window.location.search).get('demo') === '1') {
-      return;
-    }
+    if (!activeDeploymentIds || isDemoMode()) return;
     const timer = window.setInterval(() => {
       void Promise.allSettled(activeDeploymentIds.split(',').map(syncDeployment)).then(
         (results) => {
@@ -103,7 +101,14 @@ export function App(): React.JSX.Element {
 
   const handleProjectCreated = async (project: Project) => {
     setSummary((current) =>
-      current ? { ...current, projects: [project, ...current.projects] } : current,
+      current
+        ? {
+            ...current,
+            projects: current.projects.some((candidate) => candidate.id === project.id)
+              ? current.projects
+              : [project, ...current.projects],
+          }
+        : current,
     );
     if (!isDemoMode()) await load();
   };

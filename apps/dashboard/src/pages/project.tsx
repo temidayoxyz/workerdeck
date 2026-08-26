@@ -1141,7 +1141,12 @@ export function ProjectDomainsPage({
               <small>Cloudflare-managed hostname and TLS</small>
             </span>
             {productionEnvironment?.url ? (
-              <a href={productionEnvironment.url} target="_blank" rel="noreferrer">
+              <a
+                href={productionEnvironment.url}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Open ${new URL(productionEnvironment.url).hostname}`}
+              >
                 <ExternalLink size={16} />
               </a>
             ) : null}

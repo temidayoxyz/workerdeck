@@ -93,11 +93,31 @@ async function request<T>(
     );
   }
 
+  if (!payload || typeof payload !== 'object' || !('data' in payload)) {
+    throw new ApiError(
+      'INVALID_RESPONSE',
+      'WorkerDeck could not reach a valid control-plane response.',
+      response.headers.get('X-Request-Id') ?? 'unknown',
+    );
+  }
+
   return parse(payload);
 }
 
 export function isDemoMode(): boolean {
-  return import.meta.env.DEV && new URLSearchParams(window.location.search).get('demo') === '1';
+  if (!import.meta.env.DEV) return false;
+
+  const requestedMode = new URLSearchParams(window.location.search).get('demo');
+  if (requestedMode === '1') {
+    window.sessionStorage.setItem('workerdeck:demo-mode', '1');
+    return true;
+  }
+  if (requestedMode === '0') {
+    window.sessionStorage.removeItem('workerdeck:demo-mode');
+    return false;
+  }
+
+  return window.sessionStorage.getItem('workerdeck:demo-mode') === '1';
 }
 
 export async function getDashboard(): Promise<DashboardSummary> {
@@ -112,7 +132,21 @@ export async function createProject(input: CreateProjectInput): Promise<Project>
   if (isDemoMode()) {
     const now = new Date().toISOString();
     const repositoryParts = new URL(input.repositoryUrl).pathname.split('/').filter(Boolean);
-    return Promise.resolve({
+    const existingProject = demoSummary.projects.find(
+      (project) =>
+        project.slug === input.slug ||
+        project.repositoryUrl?.replace(/\.git$/, '').toLowerCase() ===
+          input.repositoryUrl.replace(/\.git$/, '').toLowerCase(),
+    );
+    if (existingProject) {
+      throw new ApiError(
+        'PROJECT_REPOSITORY_EXISTS',
+        `This repository is already connected to ${existingProject.name}.`,
+        'demo',
+      );
+    }
+
+    const project: Project = {
       id: crypto.randomUUID(),
       slug: input.slug,
       name: input.name,
@@ -126,7 +160,51 @@ export async function createProject(input: CreateProjectInput): Promise<Project>
       status: 'active',
       createdAt: now,
       updatedAt: now,
+    };
+    const environmentId = crypto.randomUUID();
+    demoSummary.projects.unshift(project);
+    demoSummary.environments.unshift(
+      {
+        id: environmentId,
+        projectId: project.id,
+        name: 'Production',
+        slug: 'production',
+        kind: 'production',
+        workerName: `workerdeck-${project.slug}`,
+        url: `https://workerdeck-${project.slug}.temidayoxyz.workers.dev`,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: crypto.randomUUID(),
+        projectId: project.id,
+        name: 'Preview',
+        slug: 'preview',
+        kind: 'preview',
+        workerName: `workerdeck-${project.slug}`,
+        url: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+    );
+    demoSummary.deployments.unshift({
+      id: crypto.randomUUID(),
+      projectId: project.id,
+      environmentId,
+      status: 'building',
+      gitCommitSha: null,
+      gitCommitMessage: 'Initial repository deployment',
+      gitBranch: project.productionBranch,
+      buildId: `build_${crypto.randomUUID().slice(0, 8)}`,
+      workerVersionId: null,
+      previewUrl: null,
+      triggeredBy: demoSummary.viewer.email ?? 'demo@workerdeck.local',
+      startedAt: now,
+      finishedAt: null,
+      createdAt: now,
     });
+    demoSummary.resourceCounts.worker += 1;
+    return Promise.resolve(project);
   }
   return request(
     '/api/v1/projects',

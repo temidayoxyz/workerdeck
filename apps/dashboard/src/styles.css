@@ -1686,8 +1686,9 @@ select:focus-visible {
   margin-top: 2px;
   color: var(--ink-faint);
   font:
-    7px 'Public Sans Variable',
+    12px 'Public Sans Variable',
     sans-serif;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 .project-analytics-chart {
@@ -1750,8 +1751,9 @@ select:focus-visible {
   margin-top: 2px;
   color: var(--ink-faint);
   font:
-    7px 'Public Sans Variable',
+    12px 'Public Sans Variable',
     sans-serif;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 .chart-kpis strong:nth-child(2) {
@@ -2869,6 +2871,9 @@ select:focus-visible {
 .request-row small {
   color: var(--ink-faint);
 }
+.request-row small {
+  font-size: 12px;
+}
 .backup-list {
   overflow: hidden;
 }
@@ -2887,6 +2892,7 @@ select:focus-visible {
 }
 .backup-row small {
   color: var(--ink-faint);
+  font-size: 12px;
 }
 .detail-panel > .button {
   width: 100%;
@@ -3363,6 +3369,7 @@ select:focus-visible {
 }
 .domain-list small {
   color: var(--ink-faint);
+  font-size: 12px;
 }
 .domain-row-end {
   display: flex;
@@ -5245,4 +5252,28 @@ progress::-moz-progress-bar {
 .section-heading a:hover {
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+
+/* Final readability and phone-density pass --------------------------------
+ * Utility labels stay compact without becoming microscopic, and configuration
+ * fields collapse to a single comfortable track on narrow phones.
+ */
+.eyebrow,
+.metric-strip span {
+  font-size: 12px;
+}
+
+@media (max-width: 620px) {
+  .form-grid--four {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .project-tabs {
+    gap: 24px;
+    padding-right: 24px;
+    scroll-snap-type: x proximity;
+    scrollbar-width: thin;
+  }
+  .project-tabs a {
+    scroll-snap-align: start;
+  }
 }
