@@ -1,0 +1,41 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "workerdeck-control-plane",
+  "main": "apps/control-plane/src/index.ts",
+  "compatibility_date": "2026-08-12",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // This is the repository-driven production target used by Cloudflare
+  // Workers Builds. Runtime variables and encrypted secrets are installed once
+  // by the WorkerDeck installer and intentionally remain managed in Cloudflare.
+  "account_id": "52c8167172a0671cb55316c74c4dfa16",
+  "workers_dev": false,
+  "keep_vars": true,
+  "routes": [
+    {
+      "pattern": "workerdeck.temidayo.xyz",
+      "custom_domain": true,
+    },
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+  },
+  "triggers": {
+    "crons": ["* * * * *"],
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "workerdeck",
+      "database_id": "eb051260-d2cc-4350-9fa3-ea0f5684c2d2",
+      "migrations_dir": "apps/control-plane/migrations",
+    },
+  ],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "apps/dashboard/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true,
+  },
+}

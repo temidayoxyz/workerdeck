@@ -32,7 +32,7 @@
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "deploy": "npm run build -w @workerdeck/dashboard && npm run deploy -w @workerdeck/control-plane",
-    "deploy:dry-run": "npm run build -w @workerdeck/dashboard && npm run build -w @workerdeck/control-plane"
+    "deploy": "npm run build -w @workerdeck/dashboard && wrangler d1 migrations apply DB --remote --config wrangler.jsonc && wrangler deploy --config wrangler.jsonc",
+    "deploy:dry-run": "npm run build -w @workerdeck/dashboard && wrangler deploy --dry-run --config wrangler.jsonc"
   }
 }
