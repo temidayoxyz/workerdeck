@@ -24,7 +24,7 @@
     "vitest": "^3.0.0"
   },
   "scripts": {
-    "build": "npm run build -w @workerdeck/dashboard && npm run build -w @workerdeck/contracts && npm run build -w @workerdeck/provider && npm run build -w @workerdeck/cli && npm run build -w @workerdeck/control-plane",
+    "build": "npm run build -w @workerdeck/dashboard && npm run build -w @workerdeck/contracts && npm run build -w @workerdeck/provider && npm run build -w @workerdeck/cli && npm run build -w @workerdeck/control-plane && node scripts/prepare-cloudflare-build.mjs",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build",
     "dev": "npm run dev -w @workerdeck/dashboard",
     "format": "prettier --write .",

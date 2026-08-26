@@ -24,4 +24,14 @@ export default tseslint.config(
     files: ['**/*.config.{js,mjs,ts}', '**/vite.config.ts'],
     extends: [tseslint.configs.disableTypeChecked],
   },
+  {
+    files: ['scripts/**/*.mjs'],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+      },
+    },
+  },
 );

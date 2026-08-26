@@ -11,12 +11,8 @@
   "account_id": "52c8167172a0671cb55316c74c4dfa16",
   "workers_dev": false,
   "keep_vars": true,
-  "routes": [
-    {
-      "pattern": "workerdeck.temidayo.xyz",
-      "custom_domain": true,
-    },
-  ],
+  // The existing custom domain remains dashboard-managed. Keeping routes out
+  // of Git deploys preserves least-privilege Workers Builds credentials.
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,
