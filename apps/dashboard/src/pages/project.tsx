@@ -1985,14 +1985,21 @@ export function ProjectEmailRoutingPage({
     if (!projectId || !environment) return;
     let active = true;
     setLoadState('loading');
+    setError(null);
     void getProjectEmailRouting(projectId, environment.id)
       .then((result) => {
         if (!active) return;
         apply(result);
         setLoadState('ready');
       })
-      .catch(() => {
-        if (active) setLoadState('unavailable');
+      .catch((reason: unknown) => {
+        if (!active) return;
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : 'WorkerDeck could not load Email Routing for this project.',
+        );
+        setLoadState('unavailable');
       });
     return () => {
       active = false;
@@ -2002,6 +2009,8 @@ export function ProjectEmailRoutingPage({
   if (!project) return <MissingProject />;
   const selectedZoneId = data?.selectedZoneId ?? null;
   const verified = (data?.addresses ?? []).filter((address) => address.verified);
+  const serviceStatus = data?.status?.status.toLowerCase() ?? 'not configured';
+  const serviceReady = data?.status?.enabled === true && serviceStatus === 'ready';
   const fail = (reason: unknown, fallback: string) => {
     setError(reason instanceof Error ? reason.message : fallback);
   };
@@ -2028,7 +2037,14 @@ export function ProjectEmailRoutingPage({
     })
       .then((result) => {
         apply(result);
-        setNotice(enabled ? 'Email Routing enabled for this zone.' : 'Email Routing disabled.');
+        const nextStatus = result.status?.status.toLowerCase();
+        setNotice(
+          enabled && nextStatus !== 'ready'
+            ? `Email Routing was enabled, but Cloudflare reports ${nextStatus ?? 'an unknown status'}. Review this zone's DNS records before relying on delivery.`
+            : enabled
+              ? 'Email Routing is active and its DNS records are ready.'
+              : 'Email Routing disabled and its managed MX records removed.',
+        );
       })
       .catch((reason: unknown) => fail(reason, 'Email Routing status could not be changed.'))
       .finally(() => setBusy(null));
@@ -2161,7 +2177,7 @@ export function ProjectEmailRoutingPage({
           <h2>Email Routing</h2>
           <p>Forward mail sent to your custom domains to verified destinations.</p>
         </div>
-        {error ? <div className="inline-alert">{error}</div> : null}
+        {error && loadState !== 'unavailable' ? <div className="inline-alert">{error}</div> : null}
         {notice ? <div className="cache-notice">{notice}</div> : null}
       </section>
       {loadState === 'loading' ? (
@@ -2171,7 +2187,7 @@ export function ProjectEmailRoutingPage({
       ) : loadState === 'unavailable' ? (
         <section className="panel cache-state-panel">
           <AlertCircle size={20} />
-          <p>WorkerDeck could not load Email Routing for this project.</p>
+          <p>{error ?? 'WorkerDeck could not load Email Routing for this project.'}</p>
         </section>
       ) : data ? (
         <>
@@ -2229,9 +2245,11 @@ export function ProjectEmailRoutingPage({
                   <span>{data.status?.enabled ? 'Enabled' : 'Disabled'}</span>
                 </label>
                 <p className="muted-copy">
-                  {data.status?.enabled
+                  {serviceReady
                     ? 'Cloudflare accepts mail for this zone and applies the rules below.'
-                    : 'Inbound mail is not accepted for this zone while Email Routing is disabled.'}
+                    : data.status?.enabled
+                      ? `Cloudflare reports this zone as ${serviceStatus}. Check for conflicting or missing MX and SPF records before relying on delivery.`
+                      : 'Inbound mail is not accepted for this zone while Email Routing is disabled.'}
                 </p>
               </section>
               <div className="email-grid">

@@ -597,10 +597,13 @@ export class CloudflareClient {
     zoneId: string,
     enabled: boolean,
   ): Promise<CloudflareEmailRoutingStatus> {
-    return this.#request(`/zones/${zoneId}/email/routing`, emailRoutingSettingsSchema, {
-      method: 'PUT',
-      body: JSON.stringify(enabled ? { enabled: true, skip_wizard: true } : { enabled: false }),
-    });
+    const path = `/zones/${zoneId}/email/routing/dns`;
+    if (enabled) {
+      return this.#request(path, emailRoutingSettingsSchema, { method: 'POST' });
+    }
+
+    await this.#request(path, z.unknown(), { method: 'DELETE' });
+    return { enabled: false, status: 'disabled', domain: null };
   }
 
   async listEmailRoutingRules(zoneId: string): Promise<CloudflareEmailRoutingRule[]> {

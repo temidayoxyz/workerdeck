@@ -69,11 +69,19 @@ Create a custom token named `WorkerDeck control plane` with these permissions:
 | Account | D1                           | Edit   | Owned database provisioning and Time Travel verification   |
 | Account | Workers KV Storage           | Edit   | Owned KV namespace provisioning                            |
 | Account | Workers R2 Storage           | Edit   | Owned R2 bucket provisioning                               |
+| Account | Email Routing Addresses      | Edit   | Verified forwarding destination management                 |
 | Zone    | Workers Routes               | Edit   | Attach the WorkerDeck custom domain and managed DNS record |
+| Zone    | Email Routing Rules          | Edit   | Forwarding rules and catch-all management                  |
+| Zone    | Zone Settings                | Edit   | Email Routing activation and managed MX/SPF records        |
 
 Only include resource types that will be enabled. Restrict account resources to the selected account
 and zone resources to the zone containing the WorkerDeck hostname. `User Details — Read` is optional;
 it only allows Wrangler to display the token owner's email during bootstrap.
+
+Email Routing permissions must cover every zone that operators may attach to a WorkerDeck project,
+not only the zone hosting the WorkerDeck dashboard. Existing installations must update the same
+control-plane token with these three permissions; its token value does not need to be exposed or
+committed.
 
 ### Application build token
 

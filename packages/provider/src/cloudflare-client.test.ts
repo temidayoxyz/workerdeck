@@ -969,7 +969,7 @@ describe('CloudflareClient', () => {
     });
   });
 
-  it('enables Email Routing settings with the wizard skipped', async () => {
+  it('enables Email Routing and provisions its required DNS records', async () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValue(
@@ -983,9 +983,24 @@ describe('CloudflareClient', () => {
       domain: 'northstar.example.com',
     });
     const [url, init] = fetcher.mock.calls[0]!;
-    expect(url).toContain('/zones/zone-id/email/routing');
-    expect(init?.method).toBe('PUT');
-    expect(JSON.parse(init?.body as string)).toEqual({ enabled: true, skip_wizard: true });
+    expect(url).toContain('/zones/zone-id/email/routing/dns');
+    expect(init?.method).toBe('POST');
+    expect(init?.body).toBeUndefined();
+  });
+
+  it('disables Email Routing and removes its managed MX records', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response(null));
+    const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });
+
+    await expect(client.setEmailRoutingSettings('zone-id', false)).resolves.toEqual({
+      enabled: false,
+      status: 'disabled',
+      domain: null,
+    });
+    const [url, init] = fetcher.mock.calls[0]!;
+    expect(url).toContain('/zones/zone-id/email/routing/dns');
+    expect(init?.method).toBe('DELETE');
+    expect(init?.body).toBeUndefined();
   });
 
   it('creates a literal forward rule and deletes it by provider id', async () => {
