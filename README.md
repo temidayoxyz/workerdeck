@@ -19,7 +19,7 @@ environments from one secure workspace.
 ---
 
 <div align="center">
-  <img src="./docs/assets/workerdeck-dashboard.png" alt="WorkerDeck application overview showing releases, resource inventory, and production health" width="840" />
+  <img src="./docs/assets/workerdeck-dashboard.jpg" alt="WorkerDeck application overview showing releases, resource inventory, and production health" width="840" />
   <p><sub>A responsive operations workspace for Cloudflare applications.</sub></p>
 </div>
 
