@@ -14,20 +14,24 @@ export function managedBuildCommand(command: string, framework: ManagedFramework
     if (command.includes(openNextIdentitySetup)) return command.trim();
     return `${openNextIdentitySetup} && npx opennextjs-cloudflare build`;
   }
-  const nonMutating = command
+  let nonMutating = command
     .replace(/(?:^|&&)\s*npx\s+wrangler\s+setup\s+--yes\s*&&\s*/g, '')
     .trim();
   if (framework === 'vite') {
-    const args = [
-      /--configLoader\s+(?:runner|native)/.test(nonMutating) ? '' : '--configLoader runner',
-      /\s--base(?:=|\s)/.test(nonMutating) ? '' : '--base /',
-    ]
-      .filter(Boolean)
-      .join(' ');
-    if (!args) return nonMutating;
+    // Older WorkerDeck releases forced Vite's experimental runner config loader.
+    // Besides being unnecessary for ordinary projects, runner executes ESM configs
+    // without the compatibility transform used by Vite's default bundled loader.
+    // Remove only the legacy value WorkerDeck injected; preserve an explicit user
+    // choice such as `--configLoader native` or `--configLoader bundle`.
+    nonMutating = nonMutating
+      .replace(/\s+--configLoader(?:=|\s+)runner\b/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const baseArgument = /\s--base(?:=|\s)/.test(nonMutating) ? '' : '--base /';
+    if (!baseArgument) return nonMutating;
     return /(?:^|\s)--(?:\s|$)/.test(nonMutating)
-      ? `${nonMutating} ${args}`
-      : `${nonMutating} -- ${args}`;
+      ? `${nonMutating} ${baseArgument}`
+      : `${nonMutating} -- ${baseArgument}`;
   }
   return nonMutating;
 }

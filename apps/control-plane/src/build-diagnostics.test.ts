@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { diagnoseBuildFailure } from './build-diagnostics';
 
 describe('diagnoseBuildFailure', () => {
+  it('identifies the legacy WorkerDeck Vite runner override', () => {
+    const diagnosis = diagnoseBuildFailure([
+      'Executing user build command: npm run build -- --configLoader runner --base /',
+      'ReferenceError: __dirname is not defined',
+    ]);
+    expect(diagnosis).toMatchObject({ code: 'VITE_RUNNER_CONFIG_INCOMPATIBLE' });
+    expect(diagnosis?.remediation).toContain('default bundled config loader');
+  });
+
   it('explains a CommonJS __dirname failure under ESM config loading', () => {
     const diagnosis = diagnoseBuildFailure([
       'failed to load config from /opt/buildhome/repo/vite.config.ts',

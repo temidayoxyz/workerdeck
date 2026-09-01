@@ -49,18 +49,31 @@ describe('managedDeployCommand', () => {
 });
 
 describe('managedBuildCommand', () => {
-  it('builds a Vite project without mutating its repository configuration', () => {
-    expect(managedBuildCommand('npm run build', 'vite')).toBe(
-      'npm run build -- --configLoader runner --base /',
-    );
+  it('builds a Vite project with its compatible default config loader', () => {
+    expect(managedBuildCommand('npm run build', 'vite')).toBe('npm run build -- --base /');
     expect(managedBuildCommand('npx wrangler setup --yes && npm run build', 'vite')).toBe(
-      'npm run build -- --configLoader runner --base /',
+      'npm run build -- --base /',
     );
   });
 
   it('keeps a Vite project base path when the command already pins one', () => {
     expect(managedBuildCommand('npm run build -- --base /docs', 'vite')).toBe(
-      'npm run build -- --base /docs --configLoader runner',
+      'npm run build -- --base /docs',
+    );
+  });
+
+  it('repairs the incompatible runner loader in existing Vite build triggers', () => {
+    expect(managedBuildCommand('npm run build -- --configLoader runner --base /', 'vite')).toBe(
+      'npm run build -- --base /',
+    );
+    expect(managedBuildCommand('npm run build -- --configLoader=runner', 'vite')).toBe(
+      'npm run build -- --base /',
+    );
+  });
+
+  it('preserves an explicitly selected supported Vite config loader', () => {
+    expect(managedBuildCommand('npm run build -- --configLoader native', 'vite')).toBe(
+      'npm run build -- --configLoader native --base /',
     );
   });
 

@@ -13,6 +13,13 @@ interface DiagnosisRule {
 
 const rules: DiagnosisRule[] = [
   {
+    code: 'VITE_RUNNER_CONFIG_INCOMPATIBLE',
+    title: 'The legacy Vite runner config loader is incompatible with this repository.',
+    remediation:
+      "WorkerDeck now restores Vite's default bundled config loader. Redeploy after the build trigger is reconciled.",
+    matches: /Executing user build command:.*--configLoader(?:=|\s+)runner/i,
+  },
+  {
     code: 'VITE_ESM_DIRNAME',
     title: 'The Vite config uses __dirname, which is unavailable under ESM config loading.',
     remediation:
