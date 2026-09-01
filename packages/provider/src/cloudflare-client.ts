@@ -166,6 +166,16 @@ export class CloudflareClient {
     return this.#request('/accounts', z.array(accountSchema));
   }
 
+  async verifyToken(): Promise<{ id: string; status: string }> {
+    return this.#request(
+      '/user/tokens/verify',
+      z.object({
+        id: z.string().min(1),
+        status: z.string().min(1),
+      }),
+    );
+  }
+
   async getWorkerAnalytics(
     workerNames: string[],
     from: string,

@@ -9,6 +9,19 @@ const response = (result: unknown, init: ResponseInit = {}) =>
   });
 
 describe('CloudflareClient', () => {
+  it('verifies a token and returns the provider token id', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(response({ id: 'token-id', status: 'active' }));
+    const client = new CloudflareClient({ token: 'build-token', fetcher });
+
+    await expect(client.verifyToken()).resolves.toEqual({ id: 'token-id', status: 'active' });
+    expect(fetcher.mock.calls[0]?.[0]).toContain('/user/tokens/verify');
+    expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get('Authorization')).toBe(
+      'Bearer build-token',
+    );
+  });
+
   it('reads the account Workers subdomain used for canonical Worker URLs', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response({ subdomain: 'temidayoxyz' }));
     const client = new CloudflareClient({ token: 'token', accountId: 'account', fetcher });

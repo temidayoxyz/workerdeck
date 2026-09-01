@@ -1,0 +1,17 @@
+# Installation identity
+DASHBOARD_ORIGIN=https://workerdeck.example.com
+CLOUDFLARE_ACCOUNT_ID=replace-with-cloudflare-account-id
+CLOUDFLARE_ACCOUNT_NAME=My Cloudflare Account
+
+# Cloudflare Access application protecting DASHBOARD_ORIGIN
+ACCESS_TEAM_DOMAIN=example.cloudflareaccess.com
+ACCESS_AUD=replace-with-access-application-audience
+
+# Least-privilege Cloudflare tokens; see docs/installation.md
+CLOUDFLARE_API_TOKEN=replace-with-control-plane-token
+CLOUDFLARE_BUILD_TOKEN=replace-with-application-build-token
+
+# Self-hosted WorkerDeck GitHub App
+GITHUB_APP_ID=replace-with-github-app-id
+GITHUB_APP_SLUG=replace-with-github-app-slug
+GITHUB_APP_PRIVATE_KEY=replace-with-complete-github-app-private-key-pem

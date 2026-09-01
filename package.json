@@ -9,6 +9,40 @@
     "node": ">=22.0.0",
     "npm": ">=10.0.0"
   },
+  "cloudflare": {
+    "bindings": {
+      "DASHBOARD_ORIGIN": {
+        "description": "The final HTTPS origin of this WorkerDeck installation, without a trailing path."
+      },
+      "CLOUDFLARE_ACCOUNT_ID": {
+        "description": "Your Cloudflare account ID, shown on the Workers overview page."
+      },
+      "CLOUDFLARE_ACCOUNT_NAME": {
+        "description": "The account name WorkerDeck should display in the workspace switcher."
+      },
+      "CLOUDFLARE_API_TOKEN": {
+        "description": "The least-privilege WorkerDeck control-plane token described in docs/installation.md."
+      },
+      "CLOUDFLARE_BUILD_TOKEN": {
+        "description": "The dedicated token used only by Cloudflare Workers Builds for application deployments."
+      },
+      "ACCESS_TEAM_DOMAIN": {
+        "description": "Your Cloudflare Access team domain, for example example.cloudflareaccess.com."
+      },
+      "ACCESS_AUD": {
+        "description": "The Audience tag from the Cloudflare Access application protecting WorkerDeck."
+      },
+      "GITHUB_APP_ID": {
+        "description": "The numeric App ID for your self-hosted WorkerDeck GitHub App."
+      },
+      "GITHUB_APP_SLUG": {
+        "description": "The URL slug for your WorkerDeck GitHub App."
+      },
+      "GITHUB_APP_PRIVATE_KEY": {
+        "description": "The complete PEM private key downloaded from your WorkerDeck GitHub App."
+      }
+    }
+  },
   "workspaces": [
     "apps/*",
     "packages/*"

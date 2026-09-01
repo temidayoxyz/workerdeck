@@ -12,9 +12,16 @@ environments from one secure workspace.
 [Getting started](#getting-started) · [Architecture](./docs/architecture.md) ·
 [Production installation](./docs/installation.md) · [Security](./SECURITY.md)
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/temidayoxyz/workerdeck)
+
 </div>
 
 ---
+
+<div align="center">
+  <img src="./docs/assets/workerdeck-dashboard.png" alt="WorkerDeck application overview showing releases, resource inventory, and production health" width="840" />
+  <p><sub>A responsive operations workspace for Cloudflare applications.</sub></p>
+</div>
 
 WorkerDeck brings the operational model of a modern deployment platform to infrastructure you own.
 It runs inside your Cloudflare account, keeps application builds isolated from the privileged control
@@ -104,7 +111,24 @@ Worker dry run.
 
 ## Production installation
 
-WorkerDeck uses a deliberate bootstrap flow:
+### Deploy with Cloudflare
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/temidayoxyz/workerdeck)
+
+Cloudflare clones WorkerDeck into your GitHub account, provisions its D1 database, configures Workers
+Builds, prompts for the encrypted integration values declared in
+[`/.dev.vars.example`](./.dev.vars.example), applies the database migrations, and deploys the dashboard
+and control plane as one Worker. Future pushes to the generated repository deploy automatically.
+
+Before opening the deploy flow, prepare the two least-privilege Cloudflare tokens, Cloudflare Access
+application values, and a self-hosted GitHub App described in the
+[production installation guide](./docs/installation.md). These credentials cannot be safely shared by
+the public template, so Cloudflare asks for them during setup and stores them as encrypted Worker
+secrets.
+
+### Install from a trusted checkout
+
+The CLI remains available for operators who want to review every generated value before deployment:
 
 1. Keep this repository in GitHub as the reviewed source of truth and CI origin.
 2. Run the WorkerDeck installer once from a trusted checkout.

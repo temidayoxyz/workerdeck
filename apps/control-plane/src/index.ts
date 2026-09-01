@@ -2973,12 +2973,31 @@ async function requireBuildToken(
   client: CloudflareClient,
 ): Promise<{ id: string }> {
   const secret = context.env.CLOUDFLARE_BUILD_TOKEN;
-  const cloudflareTokenId = context.env.CLOUDFLARE_BUILD_TOKEN_ID;
-  if (!secret || !cloudflareTokenId) {
+  if (!secret) {
     throw new AppError(
       409,
       'CLOUDFLARE_BUILD_TOKEN_NOT_CONFIGURED',
-      'Configure the dedicated Cloudflare build token secret and token ID before importing a connected repository.',
+      'Configure the dedicated Cloudflare build token secret before importing a connected repository.',
+    );
+  }
+  const verification = context.env.CLOUDFLARE_BUILD_TOKEN_ID
+    ? null
+    : await new CloudflareClient({
+        token: secret,
+      }).verifyToken();
+  if (verification && verification.status !== 'active') {
+    throw new AppError(
+      409,
+      'CLOUDFLARE_BUILD_TOKEN_INACTIVE',
+      'The dedicated Cloudflare build token is not active.',
+    );
+  }
+  const cloudflareTokenId = context.env.CLOUDFLARE_BUILD_TOKEN_ID ?? verification?.id;
+  if (!cloudflareTokenId) {
+    throw new AppError(
+      409,
+      'CLOUDFLARE_BUILD_TOKEN_ID_UNAVAILABLE',
+      'Cloudflare did not return an identifier for the dedicated build token.',
     );
   }
   const existing = (await client.listBuildTokens()).find(

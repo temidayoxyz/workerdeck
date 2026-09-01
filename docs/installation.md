@@ -5,9 +5,16 @@ identifiers to the repository.
 
 ## Deployment model
 
-WorkerDeck itself is bootstrapped once with Wrangler from a trusted checkout. This creates the control
-Worker and its D1 ownership ledger before repository-driven deployment is available. GitHub remains the
-reviewed source of truth and GitHub Actions runs the repository quality gate.
+The recommended path starts with the repository's **Deploy to Cloudflare** button. Cloudflare clones
+WorkerDeck into the operator's GitHub account, provisions the D1 ownership ledger, configures Workers
+Builds, prompts for the integration values in `.dev.vars.example`, applies migrations, and deploys the
+dashboard and control plane as one Worker.
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/temidayoxyz/workerdeck)
+
+Operators who prefer to review the generated Wrangler configuration before any provider mutation can
+use the trusted-checkout installer described below. GitHub remains the reviewed source of truth in both
+flows, and GitHub Actions runs the repository quality gate.
 
 After bootstrap, Cloudflare Workers Builds checks out and deploys application repositories selected in
 WorkerDeck. Repository code never runs in the privileged control Worker. The WorkerDeck repository can

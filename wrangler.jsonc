@@ -9,8 +9,14 @@
   // Workers Builds. Runtime variables and encrypted secrets are installed once
   // by the WorkerDeck installer and intentionally remain managed in Cloudflare.
   "account_id": "52c8167172a0671cb55316c74c4dfa16",
-  "workers_dev": false,
+  // Keep the canonical workers.dev hostname available for one-click installs.
+  // API routes still require a valid Cloudflare Access JWT in production.
+  "workers_dev": true,
   "keep_vars": true,
+  "vars": {
+    "ENVIRONMENT": "production",
+    "AUTH_MODE": "cloudflare-access",
+  },
   // The existing custom domain remains dashboard-managed. Keeping routes out
   // of Git deploys preserves least-privilege Workers Builds credentials.
   "observability": {
