@@ -63,7 +63,10 @@ export function ProjectsPage({
             return (
               <article className="project-card" key={project.id}>
                 <div className="project-card-top">
-                  <span className="project-card-framework" title={frameworkLabel(project.framework)}>
+                  <span
+                    className="project-card-framework"
+                    title={frameworkLabel(project.framework)}
+                  >
                     <FrameworkIcon framework={project.framework} size={20} />
                   </span>
                   <span className={`project-health project-health--${release.tone}`}>

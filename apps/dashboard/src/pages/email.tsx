@@ -1,14 +1,7 @@
 import type { DashboardSummary, EmailRoutingData } from '@workerdeck/contracts';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  ArrowRight,
-  CheckCircle2,
-  Mail,
-  Plus,
-  ShieldCheck,
-  Trash2,
-} from '../components/icon';
+import { ArrowRight, CheckCircle2, Mail, Plus, ShieldCheck, Trash2 } from '../components/icon';
 import {
   createProjectEmailRoutingAddress,
   createProjectEmailRoutingRule,
@@ -39,7 +32,8 @@ export function EmailPage({ summary }: { summary: DashboardSummary | null }): Re
   const [routeDestination, setRouteDestination] = useState('');
 
   const target = targets.find((candidate) => candidate.project.id === projectId) ?? targets[0];
-  const selectedZone = data?.zones.find((zone) => zone.zoneId === data.selectedZoneId) ?? data?.zones[0];
+  const selectedZone =
+    data?.zones.find((zone) => zone.zoneId === data.selectedZoneId) ?? data?.zones[0];
   const verified = data?.addresses.filter((address) => address.verified) ?? [];
 
   useEffect(() => {
@@ -148,7 +142,9 @@ export function EmailPage({ summary }: { summary: DashboardSummary | null }): Re
         <div>
           <span className="eyebrow">Cloudflare email</span>
           <h1>Email</h1>
-          <p>Create inbound addresses, connect them to projects, and manage verified destinations.</p>
+          <p>
+            Create inbound addresses, connect them to projects, and manage verified destinations.
+          </p>
         </div>
         <span className="plan-chip">{titleCase(summary?.account.plan ?? 'free')} plan</span>
       </section>
@@ -156,7 +152,10 @@ export function EmailPage({ summary }: { summary: DashboardSummary | null }): Re
       <section className="panel email-workspace-bar">
         <label>
           <span>Project</span>
-          <select value={target?.project.id ?? ''} onChange={(event) => setProjectId(event.target.value)}>
+          <select
+            value={target?.project.id ?? ''}
+            onChange={(event) => setProjectId(event.target.value)}
+          >
             {targets.map(({ project }) => (
               <option key={project.id} value={project.id}>
                 {project.name}
@@ -175,14 +174,20 @@ export function EmailPage({ summary }: { summary: DashboardSummary | null }): Re
         ) : null}
       </section>
 
-      {message ? <div className="inline-alert" role="alert">{message}</div> : null}
+      {message ? (
+        <div className="inline-alert" role="alert">
+          {message}
+        </div>
+      ) : null}
       {status === 'loading' ? (
         <section className="panel email-loading-state" aria-busy="true">
           Loading email addresses…
         </section>
       ) : null}
       {status === 'error' ? (
-        <section className="panel email-loading-state">Select another project or try again.</section>
+        <section className="panel email-loading-state">
+          Select another project or try again.
+        </section>
       ) : null}
       {status === 'ready' && data ? (
         <div className="email-management-grid">
@@ -194,7 +199,13 @@ export function EmailPage({ summary }: { summary: DashboardSummary | null }): Re
               </div>
               <span className="panel-count">{data.addresses.length}</span>
             </div>
-            <form className="email-inline-form" onSubmit={(event) => { event.preventDefault(); addDestination(); }}>
+            <form
+              className="email-inline-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                addDestination();
+              }}
+            >
               <label>
                 <span>Destination email</span>
                 <input
@@ -204,7 +215,11 @@ export function EmailPage({ summary }: { summary: DashboardSummary | null }): Re
                   placeholder="person@example.com"
                 />
               </label>
-              <button className="button button--secondary" type="submit" disabled={!destination.trim() || busy !== null}>
+              <button
+                className="button button--secondary"
+                type="submit"
+                disabled={!destination.trim() || busy !== null}
+              >
                 <Plus size={15} /> Add email
               </button>
             </form>
@@ -213,12 +228,24 @@ export function EmailPage({ summary }: { summary: DashboardSummary | null }): Re
                 const inUse = data.rules.some((rule) => rule.destinationEmail === address.email);
                 return (
                   <div className="email-record" key={address.id}>
-                    <span className={address.verified ? 'email-record-icon email-record-icon--ready' : 'email-record-icon'}>
+                    <span
+                      className={
+                        address.verified
+                          ? 'email-record-icon email-record-icon--ready'
+                          : 'email-record-icon'
+                      }
+                    >
                       {address.verified ? <CheckCircle2 size={16} /> : <Mail size={16} />}
                     </span>
                     <span>
                       <strong>{address.email}</strong>
-                      <small>{address.verified ? (inUse ? 'Verified · connected' : 'Verified') : 'Verification pending'}</small>
+                      <small>
+                        {address.verified
+                          ? inUse
+                            ? 'Verified · connected'
+                            : 'Verified'
+                          : 'Verification pending'}
+                      </small>
                     </span>
                     <button
                       className="row-action danger-action"
@@ -244,7 +271,13 @@ export function EmailPage({ summary }: { summary: DashboardSummary | null }): Re
               </div>
               <span className="panel-count">{data.rules.length}</span>
             </div>
-            <form className="email-route-form" onSubmit={(event) => { event.preventDefault(); addRoute(); }}>
+            <form
+              className="email-route-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                addRoute();
+              }}
+            >
               <label>
                 <span>Address on {selectedZone?.zoneName ?? 'your domain'}</span>
                 <input
@@ -256,26 +289,39 @@ export function EmailPage({ summary }: { summary: DashboardSummary | null }): Re
               </label>
               <label>
                 <span>Forward to</span>
-                <select value={routeDestination} onChange={(event) => setRouteDestination(event.target.value)}>
+                <select
+                  value={routeDestination}
+                  onChange={(event) => setRouteDestination(event.target.value)}
+                >
                   <option value="">Choose a verified email</option>
                   {verified.map((address) => (
-                    <option key={address.id} value={address.email}>{address.email}</option>
+                    <option key={address.id} value={address.email}>
+                      {address.email}
+                    </option>
                   ))}
                 </select>
               </label>
-              <button className="button button--secondary" type="submit" disabled={!selectedZone || !source.trim() || !routeDestination || busy !== null}>
+              <button
+                className="button button--secondary"
+                type="submit"
+                disabled={!selectedZone || !source.trim() || !routeDestination || busy !== null}
+              >
                 <Plus size={15} /> Create route
               </button>
             </form>
             <div className="email-record-list">
               {data.rules.map((rule) => (
                 <div className="email-record email-route-record" key={rule.id}>
-                  <span className="email-record-icon email-record-icon--ready"><Mail size={16} /></span>
+                  <span className="email-record-icon email-record-icon--ready">
+                    <Mail size={16} />
+                  </span>
                   <span>
                     <strong>{rule.matcherEmail}</strong>
                     <small>Forwards to {rule.destinationEmail}</small>
                   </span>
-                  <span className={rule.enabled ? 'status status--ready' : 'status'}>{rule.enabled ? 'Active' : 'Paused'}</span>
+                  <span className={rule.enabled ? 'status status--ready' : 'status'}>
+                    {rule.enabled ? 'Active' : 'Paused'}
+                  </span>
                   <button
                     className="row-action danger-action"
                     type="button"
@@ -288,7 +334,9 @@ export function EmailPage({ summary }: { summary: DashboardSummary | null }): Re
                 </div>
               ))}
               {data.rules.length === 0 ? (
-                <div className="email-empty-record">No routing addresses yet. Create one above.</div>
+                <div className="email-empty-record">
+                  No routing addresses yet. Create one above.
+                </div>
               ) : null}
             </div>
           </section>

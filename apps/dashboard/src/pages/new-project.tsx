@@ -262,121 +262,117 @@ export function NewProjectPage(): React.JSX.Element {
             </div>
 
             <div className="github-source">
-                <div className="provider-connection">
-                  <span className="provider-status-icon">
-                    <Github size={18} />
-                  </span>
-                  <span>
-                    <strong>
-                      {connection?.installations.length
-                        ? `${connection.installations[0]?.accountLogin} connected`
-                        : 'Connect GitHub'}
-                    </strong>
-                    <small>
-                      {connection?.installations.length
-                        ? 'Repositories are read from your GitHub App installation.'
-                        : 'Install the GitHub App once, then choose repositories here.'}
-                    </small>
-                  </span>
-                  {connection?.configured ? (
-                    <button className="text-button" type="button" onClick={connectGitHub}>
-                      {connection.installations.length ? 'Manage access' : 'Connect GitHub'}
-                    </button>
-                  ) : (
-                    <span className="muted-copy">Configure in settings</span>
-                  )}
-                </div>
-
-                {connection?.installations.length ? (
-                  <div className="repository-browser">
-                    <div className="repository-browser-toolbar">
-                      <label className="field-control repository-search">
-                        <Search size={16} />
-                        <input
-                          value={repositorySearch}
-                          onChange={(event) => setRepositorySearch(event.target.value)}
-                          placeholder="Search repositories…"
-                          aria-label="Search repositories"
-                        />
-                      </label>
-                      <button
-                        className="icon-button"
-                        type="button"
-                        onClick={() => void loadRepositories()}
-                        aria-label="Refresh repositories"
-                        disabled={repositoriesLoading}
-                      >
-                        <RefreshCw size={16} className={repositoriesLoading ? 'spin' : undefined} />
-                      </button>
-                    </div>
-                    <div className="repository-picker-heading">
-                      <span>Your repositories</span>
-                      <small>
-                        {visibleRepositories.length} of {repositories.length}
-                      </small>
-                    </div>
-                    <div className="repository-list" aria-busy={repositoriesLoading}>
-                      {repositoriesLoading ? (
-                        <div className="repository-empty">
-                          <LoaderCircle className="spin" size={19} />
-                          <strong>Loading repositories</strong>
-                          <small>Reading the authorized GitHub installation…</small>
-                        </div>
-                      ) : visibleRepositories.length ? (
-                        visibleRepositories.map((repository) => (
-                          <button
-                            key={repository.id}
-                            className={
-                              selectedRepository?.id === repository.id
-                                ? 'repository-option repository-option--active'
-                                : 'repository-option'
-                            }
-                            type="button"
-                            onClick={() => void selectRepository(repository)}
-                            aria-pressed={selectedRepository?.id === repository.id}
-                          >
-                            <span className="repository-icon">
-                              <Github size={17} />
-                            </span>
-                            <span>
-                              <strong>{repository.fullName}</strong>
-                              <small>
-                                {repository.language ?? 'Repository'} · {repository.defaultBranch}
-                                {repository.pushedAt
-                                  ? ` · updated ${new Date(repository.pushedAt).toLocaleDateString()}`
-                                  : ''}
-                              </small>
-                            </span>
-                            <span className="repository-visibility">
-                              {repository.private ? (
-                                <LockKeyhole size={14} />
-                              ) : (
-                                <Globe2 size={14} />
-                              )}
-                              {repository.private ? 'Private' : 'Public'}
-                            </span>
-                            {selectedRepository?.id === repository.id ? (
-                              <Check size={16} />
-                            ) : (
-                              <ArrowRight size={15} />
-                            )}
-                          </button>
-                        ))
-                      ) : (
-                        <div className="repository-empty">
-                          <Search size={19} />
-                          <strong>No repositories found</strong>
-                          <small>
-                            {repositorySearch
-                              ? 'Try another search.'
-                              : 'Update the GitHub App repository access, then refresh.'}
-                          </small>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : null}
+              <div className="provider-connection">
+                <span className="provider-status-icon">
+                  <Github size={18} />
+                </span>
+                <span>
+                  <strong>
+                    {connection?.installations.length
+                      ? `${connection.installations[0]?.accountLogin} connected`
+                      : 'Connect GitHub'}
+                  </strong>
+                  <small>
+                    {connection?.installations.length
+                      ? 'Repositories are read from your GitHub App installation.'
+                      : 'Install the GitHub App once, then choose repositories here.'}
+                  </small>
+                </span>
+                {connection?.configured ? (
+                  <button className="text-button" type="button" onClick={connectGitHub}>
+                    {connection.installations.length ? 'Manage access' : 'Connect GitHub'}
+                  </button>
+                ) : (
+                  <span className="muted-copy">Configure in settings</span>
+                )}
               </div>
+
+              {connection?.installations.length ? (
+                <div className="repository-browser">
+                  <div className="repository-browser-toolbar">
+                    <label className="field-control repository-search">
+                      <Search size={16} />
+                      <input
+                        value={repositorySearch}
+                        onChange={(event) => setRepositorySearch(event.target.value)}
+                        placeholder="Search repositories…"
+                        aria-label="Search repositories"
+                      />
+                    </label>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() => void loadRepositories()}
+                      aria-label="Refresh repositories"
+                      disabled={repositoriesLoading}
+                    >
+                      <RefreshCw size={16} className={repositoriesLoading ? 'spin' : undefined} />
+                    </button>
+                  </div>
+                  <div className="repository-picker-heading">
+                    <span>Your repositories</span>
+                    <small>
+                      {visibleRepositories.length} of {repositories.length}
+                    </small>
+                  </div>
+                  <div className="repository-list" aria-busy={repositoriesLoading}>
+                    {repositoriesLoading ? (
+                      <div className="repository-empty">
+                        <LoaderCircle className="spin" size={19} />
+                        <strong>Loading repositories</strong>
+                        <small>Reading the authorized GitHub installation…</small>
+                      </div>
+                    ) : visibleRepositories.length ? (
+                      visibleRepositories.map((repository) => (
+                        <button
+                          key={repository.id}
+                          className={
+                            selectedRepository?.id === repository.id
+                              ? 'repository-option repository-option--active'
+                              : 'repository-option'
+                          }
+                          type="button"
+                          onClick={() => void selectRepository(repository)}
+                          aria-pressed={selectedRepository?.id === repository.id}
+                        >
+                          <span className="repository-icon">
+                            <Github size={17} />
+                          </span>
+                          <span>
+                            <strong>{repository.fullName}</strong>
+                            <small>
+                              {repository.language ?? 'Repository'} · {repository.defaultBranch}
+                              {repository.pushedAt
+                                ? ` · updated ${new Date(repository.pushedAt).toLocaleDateString()}`
+                                : ''}
+                            </small>
+                          </span>
+                          <span className="repository-visibility">
+                            {repository.private ? <LockKeyhole size={14} /> : <Globe2 size={14} />}
+                            {repository.private ? 'Private' : 'Public'}
+                          </span>
+                          {selectedRepository?.id === repository.id ? (
+                            <Check size={16} />
+                          ) : (
+                            <ArrowRight size={15} />
+                          )}
+                        </button>
+                      ))
+                    ) : (
+                      <div className="repository-empty">
+                        <Search size={19} />
+                        <strong>No repositories found</strong>
+                        <small>
+                          {repositorySearch
+                            ? 'Try another search.'
+                            : 'Update the GitHub App repository access, then refresh.'}
+                        </small>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </section>
 
           <section className="panel wizard-section">
@@ -595,9 +591,7 @@ export function NewProjectPage(): React.JSX.Element {
           <dl className="definition-list">
             <div>
               <dt>Repository</dt>
-              <dd>
-                {selectedRepository?.fullName ?? 'Not selected'}
-              </dd>
+              <dd>{selectedRepository?.fullName ?? 'Not selected'}</dd>
             </div>
             <div>
               <dt>Environment</dt>

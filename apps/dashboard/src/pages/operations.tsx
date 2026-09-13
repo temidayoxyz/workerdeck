@@ -93,9 +93,7 @@ export function DomainsPage({ summary }: { summary: DashboardSummary | null }): 
                 <strong data-label="Domain">{domain.hostname}</strong>
                 <span data-label="Project">{project?.name ?? 'Unknown project'}</span>
                 <span data-label="Environment">
-                  <span className="environment-badge">
-                    {domain.environmentKind ?? 'Unknown'}
-                  </span>
+                  <span className="environment-badge">{domain.environmentKind ?? 'Unknown'}</span>
                 </span>
                 <span data-label="TLS">
                   <span className="domain-tls-state">
@@ -325,7 +323,9 @@ export function BackupsPage({ summary }: { summary: DashboardSummary | null }): 
               </span>
               <small data-label="Last verified">{relativeTime(resource.verifiedAt)}</small>
               <span data-label="Status">
-                <span className={resource.status === 'verified' ? 'healthy-label' : 'warning-label'}>
+                <span
+                  className={resource.status === 'verified' ? 'healthy-label' : 'warning-label'}
+                >
                   {resource.status === 'verified' ? 'Verified' : 'Needs attention'}
                 </span>
               </span>

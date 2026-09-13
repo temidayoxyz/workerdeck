@@ -153,20 +153,9 @@ export function CloudflareWorkers({
 
 export function ThemeHalf({ size = 18, ...props }: DashboardIconProps): React.JSX.Element {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-      {...props}
-    >
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" {...props}>
       <circle cx="12" cy="12" r="8.25" stroke="currentColor" strokeWidth="1.5" />
-      <path
-        d="M12 3.75a8.25 8.25 0 0 1 0 16.5V3.75Z"
-        fill="currentColor"
-        opacity="0.78"
-      />
+      <path d="M12 3.75a8.25 8.25 0 0 1 0 16.5V3.75Z" fill="currentColor" opacity="0.78" />
     </svg>
   );
 }

@@ -1729,8 +1729,10 @@ textarea:disabled {
 }
 
 .project-row {
-  grid-template-columns:
-    minmax(210px, 1.5fr) minmax(105px, 0.55fr) minmax(120px, 0.7fr) minmax(108px, 0.55fr);
+  grid-template-columns: minmax(210px, 1.5fr) minmax(105px, 0.55fr) minmax(120px, 0.7fr) minmax(
+      108px,
+      0.55fr
+    );
   gap: 20px;
   padding-inline: 20px;
 }
@@ -1894,8 +1896,10 @@ textarea:disabled {
   }
 
   .deployment-history .history-row:not(.history-row--header) {
-    grid-template-columns:
-      minmax(104px, 0.55fr) minmax(170px, 1.3fr) minmax(112px, 0.7fr) minmax(190px, 0.95fr);
+    grid-template-columns: minmax(104px, 0.55fr) minmax(170px, 1.3fr) minmax(112px, 0.7fr) minmax(
+        190px,
+        0.95fr
+      );
     gap: 14px 22px;
   }
 
@@ -2469,8 +2473,7 @@ textarea:disabled {
  * compressing individual controls until their text breaks vertically.
  */
 
-.app-shell
-  :is(.button, .rollback-button, .project-deploy, .text-button, .sidebar-new-project) {
+.app-shell :is(.button, .rollback-button, .project-deploy, .text-button, .sidebar-new-project) {
   white-space: nowrap;
 }
 
