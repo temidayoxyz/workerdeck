@@ -12,6 +12,7 @@ import {
   syncDeployment,
 } from './lib/api';
 import { DeploymentsPage } from './pages/deployments';
+import { EmailPage } from './pages/email';
 import { NewProjectPage } from './pages/new-project';
 import { NotFoundPage } from './pages/not-found';
 import { BackupsPage, DomainsPage, ObservabilityPage, UsagePage } from './pages/operations';
@@ -251,6 +252,7 @@ export function App(): React.JSX.Element {
           element={<ResourcesPage summary={summary} onResourceCreated={handleResourceCreated} />}
         />
         <Route path="domains" element={<DomainsPage summary={summary} />} />
+        <Route path="email" element={<EmailPage summary={summary} />} />
         <Route path="observability" element={<ObservabilityPage summary={summary} />} />
         <Route path="backups" element={<BackupsPage summary={summary} />} />
         <Route path="usage" element={<UsagePage summary={summary} />} />

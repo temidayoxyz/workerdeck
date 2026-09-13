@@ -3,6 +3,7 @@ import { AlertCircle, Github, Rocket } from '../components/icon';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { frameworkLabel } from '../lib/framework-label';
+import { FrameworkIcon } from '../components/framework-icon';
 import { relativeTime } from '../lib/format';
 import { projectReleaseState } from '../lib/project-release';
 
@@ -62,7 +63,9 @@ export function ProjectsPage({
             return (
               <article className="project-card" key={project.id}>
                 <div className="project-card-top">
-                  <span className="project-monogram">{project.name.slice(0, 2).toUpperCase()}</span>
+                  <span className="project-card-framework" title={frameworkLabel(project.framework)}>
+                    <FrameworkIcon framework={project.framework} size={20} />
+                  </span>
                   <span className={`project-health project-health--${release.tone}`}>
                     {release.label}
                   </span>
@@ -78,7 +81,10 @@ export function ProjectsPage({
                     <Github size={14} />
                     {project.repositoryOwner}/{project.repositoryName}
                   </span>
-                  <span>{frameworkLabel(project.framework)}</span>
+                  <span className="framework-label">
+                    <FrameworkIcon framework={project.framework} />
+                    <span className="framework-name">{frameworkLabel(project.framework)}</span>
+                  </span>
                 </div>
                 <div className="project-card-footer">
                   <span>Updated {relativeTime(project.updatedAt)}</span>

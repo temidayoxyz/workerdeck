@@ -8,8 +8,8 @@ import {
   ArrowRight,
   Check,
   Cloud,
+  CloudflareWorkers,
   Github,
-  Gitlab,
   Globe2,
   LoaderCircle,
   LockKeyhole,
@@ -21,7 +21,6 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import type { ShellContext } from '../components/app-shell';
-import { BrandMark } from '../components/brand';
 import {
   createProject,
   getGitHubConnection,
@@ -31,8 +30,6 @@ import {
   startGitHubSetup,
   syncGitHubInstallations,
 } from '../lib/api';
-
-type Provider = 'github' | 'public';
 
 const humanizeRepositoryName = (name: string): string =>
   name
@@ -56,7 +53,6 @@ const projectSlugFrom = (name: string): string => {
 
 export function NewProjectPage(): React.JSX.Element {
   const { projectCreated } = useOutletContext<ShellContext>();
-  const [provider, setProvider] = useState<Provider>('github');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [repositoriesLoading, setRepositoriesLoading] = useState(true);
@@ -179,25 +175,6 @@ export function NewProjectPage(): React.JSX.Element {
     }
   };
 
-  const updatePublicRepositoryUrl = (url: string) => {
-    setRepositoryUrl(url);
-    setSelectedRepository(null);
-    setInspection(null);
-    try {
-      const repositoryName = new URL(url).pathname
-        .split('/')
-        .filter(Boolean)
-        .at(-1)
-        ?.replace(/\.git$/, '');
-      if (repositoryName) {
-        setProjectName(humanizeRepositoryName(repositoryName));
-        setProjectSlug(projectSlugFrom(repositoryName));
-      }
-    } catch {
-      // Keep the partially entered URL without guessing project metadata.
-    }
-  };
-
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -212,7 +189,7 @@ export function NewProjectPage(): React.JSX.Element {
       buildCommand: data.get('buildCommand'),
       deployCommand: data.get('deployCommand'),
       adoptExistingWorker: data.get('adoptExistingWorker') === 'on',
-      ...(provider === 'github' && selectedRepository
+      ...(selectedRepository
         ? {
             repositoryProvider: 'github',
             repositoryProviderAccountId: selectedRepository.ownerId,
@@ -240,8 +217,7 @@ export function NewProjectPage(): React.JSX.Element {
     }
   };
 
-  const githubReady =
-    provider !== 'github' || Boolean(selectedRepository && inspection?.ready && !inspectionLoading);
+  const githubReady = Boolean(selectedRepository && inspection?.ready && !inspectionLoading);
 
   return (
     <div className="new-project-page">
@@ -274,52 +250,18 @@ export function NewProjectPage(): React.JSX.Element {
                 <ShieldCheck size={15} /> Scoped access
               </span>
             </div>
-            <div className="provider-grid">
-              <button
-                className={
-                  provider === 'github' ? 'provider-card provider-card--active' : 'provider-card'
-                }
-                type="button"
-                onClick={() => setProvider('github')}
-              >
+            <div className="provider-grid provider-grid--single">
+              <div className="provider-card provider-card--active provider-card--single">
                 <Github size={23} />
                 <span>
                   <strong>GitHub</strong>
                   <small>GitHub App installation</small>
                 </span>
-                {provider === 'github' ? <Check size={16} /> : null}
-              </button>
-              <button
-                className="provider-card provider-card--disabled"
-                type="button"
-                disabled
-                aria-label="GitLab integration coming soon"
-              >
-                <Gitlab size={23} />
-                <span>
-                  <strong>GitLab</strong>
-                  <small>Integration coming soon</small>
-                </span>
-                <span className="coming-soon-badge">Soon</span>
-              </button>
-              <button
-                className={
-                  provider === 'public' ? 'provider-card provider-card--active' : 'provider-card'
-                }
-                type="button"
-                onClick={() => setProvider('public')}
-              >
-                <Globe2 size={23} />
-                <span>
-                  <strong>Public URL</strong>
-                  <small>Manual fallback</small>
-                </span>
-                {provider === 'public' ? <Check size={16} /> : null}
-              </button>
+                <Check size={16} />
+              </div>
             </div>
 
-            {provider === 'github' ? (
-              <div className="github-source">
+            <div className="github-source">
                 <div className="provider-connection">
                   <span className="provider-status-icon">
                     <Github size={18} />
@@ -435,23 +377,6 @@ export function NewProjectPage(): React.JSX.Element {
                   </div>
                 ) : null}
               </div>
-            ) : (
-              <label className="field-label">
-                <span>Repository URL</span>
-                <span className="field-control">
-                  <Search size={16} />
-                  <input
-                    name="repositoryUrl"
-                    type="url"
-                    placeholder="https://github.com/owner/repository"
-                    value={repositoryUrl}
-                    onChange={(event) => updatePublicRepositoryUrl(event.target.value)}
-                    required
-                  />
-                </span>
-                <small>Use this fallback only for a public repository.</small>
-              </label>
-            )}
           </section>
 
           <section className="panel wizard-section">
@@ -671,8 +596,7 @@ export function NewProjectPage(): React.JSX.Element {
             <div>
               <dt>Repository</dt>
               <dd>
-                {selectedRepository?.fullName ??
-                  (provider === 'github' ? 'Not selected' : 'Public URL')}
+                {selectedRepository?.fullName ?? 'Not selected'}
               </dd>
             </div>
             <div>
@@ -714,8 +638,8 @@ export function NewProjectPage(): React.JSX.Element {
               </div>
             </li>
             <li>
-              <span>
-                <BrandMark className="mini-brand-mark" />
+              <span className="plan-flow-cloudflare">
+                <CloudflareWorkers size={20} />
               </span>
               <div>
                 <strong>Versioned Worker</strong>

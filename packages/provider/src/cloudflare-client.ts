@@ -589,6 +589,15 @@ export class CloudflareClient {
     );
   }
 
+  async deleteEmailRoutingDestinationAddress(addressId: string): Promise<void> {
+    const accountId = this.#requireAccountId();
+    await this.#request(
+      `/accounts/${accountId}/email/routing/addresses/${encodeURIComponent(addressId)}`,
+      z.unknown(),
+      { method: 'DELETE' },
+    );
+  }
+
   async getEmailRoutingSettings(
     zoneId: string,
     zoneName?: string,

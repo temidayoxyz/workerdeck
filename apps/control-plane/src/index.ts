@@ -1803,6 +1803,22 @@ app.post(
   },
 );
 
+app.delete(
+  '/api/v1/projects/:projectId/environments/:environmentId/email-routing/addresses/:addressId',
+  async (context) => {
+    const repository = new Repository(context.env.DB);
+    const target = await repository.getDeploymentTarget(
+      context.req.param('projectId'),
+      context.req.param('environmentId'),
+    );
+    await cloudflareClient(context).deleteEmailRoutingDestinationAddress(
+      context.req.param('addressId'),
+    );
+    const data = await emailRoutingDataFor(context, target, context.req.query('zoneId') ?? null);
+    return context.json({ data, requestId: context.get('requestId') });
+  },
+);
+
 app.put(
   '/api/v1/projects/:projectId/environments/:environmentId/email-routing/catch-all',
   async (context) => {

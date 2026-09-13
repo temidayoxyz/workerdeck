@@ -1,15 +1,17 @@
 import type { DashboardSummary, ManagedResource, ResourceKind } from '@workerdeck/contracts';
 import {
   Archive,
-  Box,
-  Boxes,
+  type Box,
   CloudCog,
   Database,
-  ExternalLink,
+  DatabaseBackup,
+  Globe2,
   HardDrive,
-  Network,
+  Inbox,
+  Layers,
   Plus,
   Search,
+  ShieldCheck,
   Sparkles,
   Workflow,
 } from '../components/icon';
@@ -35,18 +37,23 @@ const resources: Array<{
     description: 'Configuration and low-latency reads',
     icon: Archive,
   },
-  { kind: 'r2', label: 'R2 buckets', description: 'Objects, artifacts, and exports', icon: Box },
+  {
+    kind: 'r2',
+    label: 'R2 buckets',
+    description: 'Objects, artifacts, and exports',
+    icon: DatabaseBackup,
+  },
   {
     kind: 'domain',
     label: 'Domains',
     description: 'Routes, hostnames, and certificates',
-    icon: ExternalLink,
+    icon: Globe2,
   },
   {
     kind: 'queue',
     label: 'Queues',
     description: 'Asynchronous producers and consumers',
-    icon: Network,
+    icon: Inbox,
   },
   {
     kind: 'workflow',
@@ -76,7 +83,7 @@ const resources: Array<{
     kind: 'durable_object',
     label: 'Durable Objects',
     description: 'Adopted stateful object namespaces',
-    icon: Boxes,
+    icon: Layers,
   },
 ];
 
@@ -120,10 +127,15 @@ export function ResourcesPage({
         ))}
       </div>
       <div className="ownership-note">
-        <strong>WorkerDeck only changes what it owns.</strong>
+        <span className="ownership-note-icon" aria-hidden="true">
+          <ShieldCheck size={18} />
+        </span>
         <span>
-          Resources created outside WorkerDeck remain visible in Cloudflare but are never adopted or
-          deleted implicitly.
+          <strong>Ownership stays explicit</strong>
+          <small>
+            WorkerDeck changes only resources in its ownership ledger. External Cloudflare resources
+            remain visible and are never adopted or deleted automatically.
+          </small>
         </span>
       </div>
       <NewResourceDialog

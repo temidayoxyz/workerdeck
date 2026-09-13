@@ -108,13 +108,11 @@ export function CommandMenu({ open, onClose, summary }: CommandMenuProps): React
           <X size={17} />
         </button>
       </div>
-      <div className="command-results" role="listbox" aria-label="WorkerDeck destinations">
+      <div className="command-results" aria-label="WorkerDeck destinations" aria-live="polite">
         {options.map((option) => (
           <button
             key={`${option.group}-${option.label}`}
             type="button"
-            role="option"
-            aria-selected="false"
             onClick={() => select(option.to)}
           >
             <span className="command-result-icon">

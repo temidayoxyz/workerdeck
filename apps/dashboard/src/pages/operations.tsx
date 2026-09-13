@@ -9,6 +9,7 @@ import {
   Activity,
   AlertTriangle,
   CheckCircle2,
+  CloudflareWorkers,
   Database,
   DatabaseBackup,
   Globe2,
@@ -67,14 +68,20 @@ export function DomainsPage({ summary }: { summary: DashboardSummary | null }): 
               : null;
             return (
               <div className="data-row" key={environment.id}>
-                <strong>{new URL(environment.url ?? '').hostname}</strong>
-                <span>{project?.name}</span>
-                <span className="environment-badge">Production</span>
-                <span>
-                  <LockKeyhole size={14} /> Auto-managed
+                <strong data-label="Domain">{new URL(environment.url ?? '').hostname}</strong>
+                <span data-label="Project">{project?.name}</span>
+                <span data-label="Environment">
+                  <span className="environment-badge">Production</span>
                 </span>
-                <span className={`healthy-label health-badge--${release?.tone ?? 'inactive'}`}>
-                  <i /> {release?.label ?? 'Unknown'}
+                <span data-label="TLS">
+                  <span className="domain-tls-state">
+                    <LockKeyhole size={14} /> Auto-managed
+                  </span>
+                </span>
+                <span data-label="Status">
+                  <span className={`healthy-label health-badge--${release?.tone ?? 'inactive'}`}>
+                    <i /> {release?.label ?? 'Unknown'}
+                  </span>
                 </span>
               </div>
             );
@@ -83,24 +90,32 @@ export function DomainsPage({ summary }: { summary: DashboardSummary | null }): 
             const project = summary.projects.find((item) => item.id === domain.projectId);
             return (
               <div className="data-row" key={domain.id}>
-                <strong>{domain.hostname}</strong>
-                <span>{project?.name ?? 'Unknown project'}</span>
-                <span className="environment-badge">{domain.environmentKind ?? 'Unknown'}</span>
-                <span>
-                  <LockKeyhole size={14} /> {domain.certificateId ? 'Active' : 'Provisioning'}
+                <strong data-label="Domain">{domain.hostname}</strong>
+                <span data-label="Project">{project?.name ?? 'Unknown project'}</span>
+                <span data-label="Environment">
+                  <span className="environment-badge">
+                    {domain.environmentKind ?? 'Unknown'}
+                  </span>
                 </span>
-                <span
-                  className={`healthy-label ${domain.status === 'detaching' ? 'health-badge--progress' : ''}`}
-                  title={domain.providerError ?? undefined}
-                >
-                  <i />{' '}
-                  {domain.status === 'detaching'
-                    ? 'Detaching'
-                    : domain.status === 'adopted'
-                      ? 'Adopted'
-                      : domain.source === 'synced'
-                        ? 'Synced'
-                        : 'Managed'}
+                <span data-label="TLS">
+                  <span className="domain-tls-state">
+                    <LockKeyhole size={14} /> {domain.certificateId ? 'Active' : 'Provisioning'}
+                  </span>
+                </span>
+                <span data-label="Status">
+                  <span
+                    className={`healthy-label ${domain.status === 'detaching' ? 'health-badge--progress' : ''}`}
+                    title={domain.providerError ?? undefined}
+                  >
+                    <i />{' '}
+                    {domain.status === 'detaching'
+                      ? 'Detaching'
+                      : domain.status === 'adopted'
+                        ? 'Adopted'
+                        : domain.source === 'synced'
+                          ? 'Synced'
+                          : 'Managed'}
+                  </span>
                 </span>
               </div>
             );
@@ -117,7 +132,9 @@ export function DomainsPage({ summary }: { summary: DashboardSummary | null }): 
             <i />
             <ServerCog />
             <i />
-            <span className="project-runtime-mark">W</span>
+            <span className="project-runtime-mark" aria-label="Cloudflare Workers">
+              <CloudflareWorkers size={19} />
+            </span>
             <i />
             <ShieldCheck />
           </div>
@@ -181,8 +198,8 @@ export function ObservabilityPage({
         title="Observability"
         description="The last 60 minutes of requests, failures, and CPU across your Worker applications."
       />
-      <section className="health-rail">
-        {summary?.projects.slice(0, 4).map((project) => {
+      <section className="health-rail" aria-label="Project health">
+        {summary?.projects.map((project) => {
           const workerName = summary.environments.find(
             (environment) =>
               environment.projectId === project.id && environment.kind === 'production',
@@ -298,13 +315,19 @@ export function BackupsPage({ summary }: { summary: DashboardSummary | null }): 
           ) : null}
           {posture?.resources.map((resource) => (
             <div className="backup-row" key={resource.resourceId}>
-              <Database size={17} />
-              <strong>{resource.name}</strong>
-              <span>D1</span>
-              <span>{resource.status === 'verified' ? 'Time Travel' : 'Unavailable'}</span>
-              <small>{relativeTime(resource.verifiedAt)}</small>
-              <span className={resource.status === 'verified' ? 'healthy-label' : 'warning-label'}>
-                {resource.status === 'verified' ? 'Verified' : 'Needs attention'}
+              <span className="backup-name" data-label="Database">
+                <Database size={17} />
+                <strong>{resource.name}</strong>
+              </span>
+              <span data-label="Type">D1</span>
+              <span data-label="Recovery">
+                {resource.status === 'verified' ? 'Time Travel' : 'Unavailable'}
+              </span>
+              <small data-label="Last verified">{relativeTime(resource.verifiedAt)}</small>
+              <span data-label="Status">
+                <span className={resource.status === 'verified' ? 'healthy-label' : 'warning-label'}>
+                  {resource.status === 'verified' ? 'Verified' : 'Needs attention'}
+                </span>
               </span>
             </div>
           ))}

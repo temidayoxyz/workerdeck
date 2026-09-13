@@ -434,15 +434,15 @@ export function ProjectDeploymentsPage({
         </div>
         {deployments.map((deployment) => (
           <div className="data-row" key={deployment.id}>
-            <span className="status-cell">
+            <span className="status-cell" data-label="Status">
               <DeploymentStatus status={deployment.status} />
               {summary?.environments.find((candidate) => candidate.id === deployment.environmentId)
                 ?.kind === 'preview' ? (
                 <span className="environment-badge">Preview</span>
               ) : null}
             </span>
-            <code>{deployment.workerVersionId ?? '—'}</code>
-            <span className="commit-cell">
+            <code data-label="Version">{deployment.workerVersionId ?? '—'}</code>
+            <span className="commit-cell" data-label="Commit">
               <GitCommitHorizontal size={14} />
               <span>
                 <strong>{deployment.gitCommitMessage ?? 'Manual deployment'}</strong>
@@ -461,10 +461,10 @@ export function ProjectDeploymentsPage({
                 ) : null}
               </span>
             </span>
-            <code>{deployment.gitBranch ?? project.productionBranch}</code>
-            <span>{deployment.triggeredBy}</span>
-            <span>{relativeTime(deployment.createdAt)}</span>
-            <span className="deployment-actions">
+            <code data-label="Branch">{deployment.gitBranch ?? project.productionBranch}</code>
+            <span data-label="Triggered by">{deployment.triggeredBy}</span>
+            <span data-label="Created">{relativeTime(deployment.createdAt)}</span>
+            <span className="deployment-actions" data-label="Actions">
               <Link
                 className="row-action"
                 to={`/projects/${project.id}/logs/${deployment.id}`}
@@ -981,16 +981,16 @@ export function ProjectResourcesPage({
         </div>
         {resources.map((resource) => (
           <div className="data-row" key={resource.id}>
-            <span className="resource-name-cell">
+            <span className="resource-name-cell" data-label="Name">
               <Database size={16} />
               <strong>{resource.name}</strong>
             </span>
-            <span>{resource.kind.toUpperCase()}</span>
-            <code>{resource.cloudflareId}</code>
-            <span className="healthy-label">
+            <span data-label="Type">{resource.kind.toUpperCase()}</span>
+            <code data-label="Provider ID">{resource.cloudflareId}</code>
+            <span className="healthy-label" data-label="Ownership">
               <i /> WorkerDeck managed
             </span>
-            <span>{relativeTime(resource.createdAt)}</span>
+            <span data-label="Created">{relativeTime(resource.createdAt)}</span>
           </div>
         ))}
         {resources.length === 0 ? (

@@ -14,6 +14,7 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { DeploymentRail } from '../components/deployment-rail';
 import { DeploymentStatus } from '../components/status';
+import { FrameworkIcon } from '../components/framework-icon';
 import { relativeTime, shortSha, titleCase } from '../lib/format';
 import { frameworkLabel } from '../lib/framework-label';
 import { greetingFor } from '../lib/greeting';
@@ -72,17 +73,20 @@ export function OverviewPage({
 
   return (
     <div className="overview-page">
-      <section className="page-intro">
-        <div>
-          <span className="eyebrow">Account overview</span>
-          <h1>{greetingFor(new Date())}</h1>
-          <p>Your Cloudflare applications, releases, and owned resources in one place.</p>
-        </div>
-        <div
-          className={`connection-state ${summary.account.connected ? 'connection-state--connected' : ''}`}
-        >
-          <span aria-hidden="true" />
-          {summary.account.connected ? 'Cloudflare connected' : 'Cloudflare not connected'}
+      <section className="page-intro overview-intro">
+        <div className="overview-intro-copy">
+          <h1>
+            {greetingFor(new Date(), greetingName(summary.account.userEmail, summary.account.name))}
+          </h1>
+          <div className="overview-subline">
+            <p>Your Cloudflare applications, releases, and owned resources in one place.</p>
+            <div
+              className={`connection-state ${summary.account.connected ? 'connection-state--connected' : ''}`}
+            >
+              <span aria-hidden="true" />
+              {summary.account.connected ? 'Cloudflare connected' : 'Cloudflare not connected'}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -159,13 +163,15 @@ export function OverviewPage({
             {latest ? (
               <>
                 <div className="deployment-meta">
-                  <span>
+                  <span title={latest.gitCommitMessage ?? 'Manual deployment'}>
                     <GitCommitHorizontal size={15} />
                     <code>{shortSha(latest.gitCommitSha)}</code>
                     {latest.gitCommitMessage ?? 'Manual deployment'}
                   </span>
-                  <span>{environmentFor(summary.environments, latest)?.name ?? 'Production'}</span>
-                  <span>{relativeTime(latest.createdAt)}</span>
+                  <span className="deployment-meta-environment">
+                    {environmentFor(summary.environments, latest)?.name ?? 'Production'}
+                  </span>
+                  <span className="deployment-meta-time">{relativeTime(latest.createdAt)}</span>
                 </div>
                 <DeploymentRail
                   deployment={latest}
@@ -258,10 +264,10 @@ export function OverviewPage({
             </div>
             <div className="project-table" role="table" aria-label="Projects">
               <div className="project-row project-row--header" role="row">
-                <span>Project</span>
-                <span>Framework</span>
-                <span>Production</span>
-                <span>Updated</span>
+                <span role="columnheader">Project</span>
+                <span role="columnheader">Framework</span>
+                <span role="columnheader">Production</span>
+                <span role="columnheader">Updated</span>
               </div>
               {summary.projects.map((project) => {
                 const release = projectReleaseState(
@@ -271,7 +277,7 @@ export function OverviewPage({
                 );
                 return (
                   <div className="project-row" role="row" key={project.id}>
-                    <span className="project-name">
+                    <span className="project-name" role="cell">
                       <span className="project-monogram">
                         {project.name.slice(0, 2).toUpperCase()}
                       </span>
@@ -284,10 +290,17 @@ export function OverviewPage({
                         </small>
                       </span>
                     </span>
-                    <span>
-                      <span className="framework-label">{frameworkLabel(project.framework)}</span>
+                    <span
+                      className="framework-cell"
+                      role="cell"
+                      title={frameworkLabel(project.framework)}
+                    >
+                      <span className="framework-label">
+                        <FrameworkIcon framework={project.framework} />
+                        <span className="framework-name">{frameworkLabel(project.framework)}</span>
+                      </span>
                     </span>
-                    <span className="production-link">
+                    <span className="production-link" role="cell">
                       {release.label === 'Live' ? (
                         <>
                           <span className="live-dot" />
@@ -299,7 +312,9 @@ export function OverviewPage({
                         </span>
                       )}
                     </span>
-                    <span className="muted-copy">{relativeTime(project.updatedAt)}</span>
+                    <span className="muted-copy updated-cell" role="cell">
+                      {relativeTime(project.updatedAt)}
+                    </span>
                   </div>
                 );
               })}
@@ -346,6 +361,11 @@ export function OverviewPage({
       )}
     </div>
   );
+}
+
+function greetingName(email: string | null | undefined, accountName: string): string {
+  const candidate = email?.split('@')[0]?.split(/[._-]+/)[0] ?? accountName.split(/\s+/)[0] ?? '';
+  return candidate ? `${candidate.charAt(0).toUpperCase()}${candidate.slice(1)}` : 'there';
 }
 
 function EmptyOverview({ onImport }: { onImport: () => void }): React.JSX.Element {

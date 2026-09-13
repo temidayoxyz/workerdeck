@@ -100,14 +100,14 @@ export function DeploymentsPage({
           );
           return (
             <div className="history-row" key={deployment.id}>
-              <span className="status-cell">
+              <span className="status-cell" data-label="Status">
                 <DeploymentStatus status={deployment.status} />
                 {summary.environments.find((candidate) => candidate.id === deployment.environmentId)
                   ?.kind === 'preview' ? (
                   <span className="environment-badge">Preview</span>
                 ) : null}
               </span>
-              <span className="history-commit">
+              <span className="history-commit" data-label="Project and commit">
                 <strong>{project?.name ?? 'Unknown project'}</strong>
                 <small>
                   <GitCommitHorizontal size={13} />
@@ -129,12 +129,16 @@ export function DeploymentsPage({
                   </a>
                 ) : null}
               </span>
-              <span>
+              <span data-label="Branch">
                 <code>{deployment.gitBranch ?? 'main'}</code>
               </span>
-              <span className="muted-copy">{deployment.triggeredBy}</span>
-              <span className="muted-copy">{relativeTime(deployment.createdAt)}</span>
-              <span>
+              <span className="muted-copy" data-label="Triggered by">
+                {deployment.triggeredBy}
+              </span>
+              <span className="muted-copy" data-label="Created">
+                {relativeTime(deployment.createdAt)}
+              </span>
+              <span data-label="Actions">
                 <span className="deployment-actions">
                   {deployment.workerVersionId &&
                   ['ready', 'rolled_back'].includes(deployment.status) &&

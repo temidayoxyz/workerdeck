@@ -19,12 +19,15 @@ import global from '@iconify-icons/solar/global-linear';
 import graph from '@iconify-icons/solar/graph-up-linear';
 import hamburgerMenu from '@iconify-icons/solar/hamburger-menu-linear';
 import history from '@iconify-icons/solar/history-linear';
+import inbox from '@iconify-icons/solar/inbox-linear';
 import key from '@iconify-icons/solar/key-linear';
+import layers from '@iconify-icons/solar/layers-linear';
 import letter from '@iconify-icons/solar/letter-linear';
 import lock from '@iconify-icons/solar/lock-keyhole-linear';
 import magic from '@iconify-icons/solar/magic-stick-3-linear';
 import magnifer from '@iconify-icons/solar/magnifer-linear';
 import menuDots from '@iconify-icons/solar/menu-dots-linear';
+import monitor from '@iconify-icons/solar/monitor-linear';
 import moon from '@iconify-icons/solar/moon-linear';
 import network from '@iconify-icons/solar/shield-network-linear';
 import plus from '@iconify-icons/solar/add-circle-linear';
@@ -45,6 +48,7 @@ import usersGroup from '@iconify-icons/solar/users-group-rounded-linear';
 import widgetFour from '@iconify-icons/solar/widget-4-linear';
 import widgetFive from '@iconify-icons/solar/widget-5-linear';
 import close from '@iconify-icons/solar/close-circle-linear';
+import doubleAltArrowLeft from '@iconify-icons/solar/double-alt-arrow-left-linear';
 import github from '@iconify-icons/simple-icons/github';
 import gitlab from '@iconify-icons/simple-icons/gitlab';
 import { Icon, type IconifyIcon, type IconProps } from '@iconify/react';
@@ -94,12 +98,15 @@ export const GitBranch = createIcon(branchingPaths);
 export const GitCommitHorizontal = createIcon(codeCircle);
 export const Globe2 = createIcon(global);
 export const HardDrive = createIcon(server);
+export const Inbox = createIcon(inbox);
 export const KeyRound = createIcon(key);
+export const Layers = createIcon(layers);
 export const LayoutGrid = createIcon(widgetFour);
 export const LoaderCircle = createIcon(restart);
 export const LockKeyhole = createIcon(lock);
 export const Mail = createIcon(letter);
 export const MenuDots = createIcon(menuDots);
+export const Monitor = createIcon(monitor);
 export const Moon = createIcon(moon);
 export const MoreHorizontal = createIcon(menuDots);
 export const Network = createIcon(network);
@@ -118,3 +125,48 @@ export const Trash2 = createIcon(trash);
 export const Users = createIcon(usersGroup);
 export const Workflow = createIcon(programming);
 export const X = createIcon(close);
+export const DoubleAltArrowLeft = createIcon(doubleAltArrowLeft);
+
+/** Cloudflare Workers product mark, adapted from theSVG's monochrome-ready source. */
+export function CloudflareWorkers({
+  size = 18,
+  strokeWidth: _strokeWidth,
+  ...props
+}: DashboardIconProps): React.JSX.Element {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 256 231"
+      fill="currentColor"
+      preserveAspectRatio="xMidYMid meet"
+      aria-hidden="true"
+      focusable="false"
+      {...props}
+    >
+      <path d="m65.82 3.324 30.161 54.411-27.698 49.857a16.003 16.003 0 0 0 0 15.573l27.698 49.98-30.16 54.411a32.007 32.007 0 0 1-13.542-12.74L4.27 131.412a32.13 32.13 0 0 1 0-32.007l48.01-83.403a32.007 32.007 0 0 1 13.542-12.68Z" />
+      <path d="m203.696 16.003 48.01 83.403c5.725 9.848 5.725 22.159 0 32.007l-48.01 83.402a32.007 32.007 0 0 1-27.698 16.004h-48.01l59.705-107.654a16.003 16.003 0 0 0 0-15.511L127.988 0h48.01a32.007 32.007 0 0 1 27.698 16.003Z" />
+      <path d="M79.978 230.819c-4.924 0-9.849-1.17-14.157-3.263l59.212-106.792a11.045 11.045 0 0 0 0-10.71L65.821 3.324A32.007 32.007 0 0 1 79.978 0h48.01l59.705 107.654a16.003 16.003 0 0 1 0 15.51L127.988 230.82h-48.01Z" />
+    </svg>
+  );
+}
+
+export function ThemeHalf({ size = 18, ...props }: DashboardIconProps): React.JSX.Element {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      {...props}
+    >
+      <circle cx="12" cy="12" r="8.25" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M12 3.75a8.25 8.25 0 0 1 0 16.5V3.75Z"
+        fill="currentColor"
+        opacity="0.78"
+      />
+    </svg>
+  );
+}

@@ -6,7 +6,11 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { App } from './app';
+import { initializeTheme } from './lib/theme';
 import './styles.css';
+import './design-system.css';
+
+initializeTheme();
 
 const root = document.getElementById('root');
 if (!root) throw new Error('WorkerDeck could not find the application root.');

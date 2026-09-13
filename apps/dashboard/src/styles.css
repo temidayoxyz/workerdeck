@@ -1,82 +1,7 @@
 :root {
-  color: #edf3f9;
-  background: #050e18;
   font-family: 'Public Sans Variable', 'Segoe UI', sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --canvas: #050e18;
-  --canvas-deep: #030a12;
-  --sidebar: #071523;
-  --surface: #0a1a2c;
-  --surface-raised: #10253b;
-  --surface-soft: #0d2032;
-  --ink: #edf3f9;
-  --ink-soft: #a9bccb;
-  --ink-faint: #7e94a6;
-  --line: #1e3448;
-  --line-soft: #16293a;
-  --line-strong: #2c465c;
-  --orange: #ff6b00;
-  --orange-deep: #e95b00;
-  --orange-soft: rgb(255 107 0 / 12%);
-  --cyan: #37d4ec;
-  --cyan-soft: rgb(55 212 236 / 12%);
-  --green: #45ce98;
-  --green-soft: rgb(69 206 152 / 12%);
-  --yellow: #f0b429;
-  --yellow-soft: rgb(240 180 41 / 12%);
-  --red: #ff6262;
-  --red-soft: rgb(255 98 98 / 12%);
-  --blue: #37a9ee;
-  --blue-deep: #168bd2;
-  --blue-soft: rgb(55 169 238 / 12%);
-  --teal: var(--green);
-  --teal-soft: var(--green-soft);
-  --amber: var(--yellow);
-  --amber-soft: var(--yellow-soft);
-  --cobalt: var(--cyan);
-  --cobalt-wash: var(--cyan-soft);
-  --panel: var(--surface);
-  --cloud: var(--canvas);
-  --radius: 14px;
-  --radius-control: 10px;
-  --shadow:
-    0 1px 0 0 rgb(255 255 255 / 3%) inset, 0 1px 2px rgb(2 8 14 / 24%),
-    0 16px 40px -18px rgb(2 8 14 / 55%);
-  --shadow-pop:
-    0 1px 0 0 rgb(255 255 255 / 4%) inset, 0 2px 6px rgb(2 8 14 / 30%),
-    0 24px 64px -20px rgb(2 8 14 / 65%);
-}
-
-:root[data-theme='light'] {
-  color: #14242f;
-  background: #eef2f6;
-  --canvas: #eef2f6;
-  --canvas-deep: #e6ecf1;
-  --sidebar: #f9fbfc;
-  --surface: #ffffff;
-  --surface-raised: #ffffff;
-  --surface-soft: #f4f8fa;
-  --ink: #14242f;
-  --ink-soft: #44586a;
-  --ink-faint: #5a6f80;
-  --line: #d7e0e6;
-  --line-soft: #e6edf1;
-  --line-strong: #b8c7cf;
-  --orange-soft: rgb(255 107 0 / 9%);
-  --cyan: #078fa8;
-  --cyan-soft: rgb(7 143 168 / 9%);
-  --green: #12835d;
-  --green-soft: rgb(18 131 93 / 9%);
-  --yellow: #a66d00;
-  --yellow-soft: rgb(166 109 0 / 9%);
-  --red: #cf3e49;
-  --red-soft: rgb(207 62 73 / 9%);
-  --blue: #087cb8;
-  --blue-deep: #086897;
-  --blue-soft: rgb(8 124 184 / 9%);
-  --shadow: 0 1px 2px rgb(41 67 84 / 5%), 0 14px 34px -14px rgb(41 67 84 / 14%);
-  --shadow-pop: 0 2px 6px rgb(41 67 84 / 8%), 0 24px 60px -18px rgb(41 67 84 / 22%);
 }
 
 * {
@@ -3605,7 +3530,7 @@ select:focus-visible {
     border-bottom: 1px solid var(--line-soft);
   }
 }
-@media (max-width: 850px) {
+@media (max-width: 1024px) {
   .sidebar {
     top: 0;
     bottom: 0;
@@ -3841,13 +3766,8 @@ select:focus-visible {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  html {
     scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
   }
 }
 
@@ -5192,11 +5112,11 @@ select:focus-visible {
 }
 
 /* Navigation drawer ---------------------------------------------------------
- * Below 850px the sidebar becomes a slide-in drawer behind a scrim. The
+ * At tablet widths the sidebar becomes a slide-in drawer behind a scrim. The
  * hamburger lives in the topbar; the drawer closes on navigation, scrim tap,
  * its own close button, or Escape (handled in the shell component).
  */
-@media (min-width: 851px) {
+@media (min-width: 1025px) {
   .sidebar-scrim {
     display: none;
   }

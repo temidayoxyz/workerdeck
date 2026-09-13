@@ -1011,6 +1011,31 @@ export async function createProjectEmailRoutingAddress(
   );
 }
 
+export async function deleteProjectEmailRoutingAddress(
+  projectId: string,
+  environmentId: string,
+  addressId: string,
+  zoneId?: string,
+): Promise<EmailRoutingData> {
+  if (isDemoMode()) {
+    const state = demoEmailRouting();
+    demoEmailRoutingState = {
+      ...state,
+      addresses: state.addresses.filter((address) => address.id !== addressId),
+    };
+    return Promise.resolve(demoEmailRoutingState);
+  }
+  const query = zoneId ? `?zoneId=${encodeURIComponent(zoneId)}` : '';
+  return request(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/environments/${encodeURIComponent(environmentId)}/email-routing/addresses/${encodeURIComponent(addressId)}${query}`,
+    { method: 'DELETE' },
+    (value) => {
+      const envelope = value as ApiSuccess<unknown>;
+      return emailRoutingDataSchema.parse(envelope.data);
+    },
+  );
+}
+
 export async function setProjectEmailRoutingCatchAll(
   projectId: string,
   environmentId: string,

@@ -4,36 +4,55 @@ import {
   Boxes,
   ChartNoAxesColumnIncreasing,
   CircleHelp,
-  Command,
   DatabaseBackup,
+  DoubleAltArrowLeft,
   Gauge,
   Globe2,
   LayoutGrid,
+  Mail,
   Menu,
-  Moon,
   Plus,
   Rocket,
+  Search,
   Settings,
-  Sun,
+  ThemeHalf,
   Users,
   X,
 } from './icon';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '../lib/theme';
 import { Brand } from './brand';
 import { CommandMenu } from './command-menu';
 
-const primaryNavigation = [
-  { label: 'Overview', to: '/', icon: Gauge },
-  { label: 'Projects', to: '/projects', icon: LayoutGrid },
-  { label: 'Deployments', to: '/deployments', icon: Rocket },
-  { label: 'Resources', to: '/resources', icon: Boxes },
-  { label: 'Domains', to: '/domains', icon: Globe2 },
-  { label: 'Observability', to: '/observability', icon: Activity },
-  { label: 'Backups', to: '/backups', icon: DatabaseBackup },
-  { label: 'Team', to: '/team', icon: Users },
-];
+const navigationGroups = [
+  {
+    label: 'Main',
+    items: [
+      { label: 'Home', to: '/', icon: Gauge },
+      { label: 'Projects', to: '/projects', icon: LayoutGrid },
+      { label: 'Deployments', to: '/deployments', icon: Rocket },
+      { label: 'Monitoring & logs', to: '/observability', icon: Activity },
+    ],
+  },
+  {
+    label: 'Infrastructure',
+    items: [
+      { label: 'Resources & services', to: '/resources', icon: Boxes, badge: 'resources' },
+      { label: 'Domains', to: '/domains', icon: Globe2 },
+      { label: 'Email', to: '/email', icon: Mail },
+      { label: 'Backups', to: '/backups', icon: DatabaseBackup },
+    ],
+  },
+  {
+    label: 'Configuration',
+    items: [
+      { label: 'Team & access', to: '/team', icon: Users },
+      { label: 'Usage', to: '/usage', icon: ChartNoAxesColumnIncreasing },
+      { label: 'Settings', to: '/settings', icon: Settings },
+    ],
+  },
+] as const;
 
 const pageNames: Record<string, string> = {
   '/': 'Overview',
@@ -42,6 +61,7 @@ const pageNames: Record<string, string> = {
   '/deployments': 'Deployments',
   '/resources': 'Resources',
   '/domains': 'Domains',
+  '/email': 'Email',
   '/observability': 'Observability',
   '/backups': 'Backups',
   '/usage': 'Usage',
@@ -71,7 +91,17 @@ export function AppShell({
 }: AppShellProps): React.JSX.Element {
   const [commandOpen, setCommandOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
-  const [theme, toggleTheme] = useTheme();
+  const [compactNavigation, setCompactNavigation] = useState(
+    () => window.matchMedia('(max-width: 1024px)').matches,
+  );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => window.localStorage.getItem('workerdeck-sidebar') === 'collapsed',
+  );
+  const [themeMode, resolvedTheme, toggleTheme] = useTheme();
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const drawerCloseRef = useRef<HTMLButtonElement>(null);
+  const navWasOpen = useRef(false);
+  const initialLocationKey = useRef<string | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -100,6 +130,19 @@ export function AppShell({
     return () => document.body.classList.remove('drawer-open');
   }, [navOpen]);
 
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 1024px)');
+    const update = () => setCompactNavigation(media.matches);
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+
+  useEffect(() => {
+    if (navOpen) drawerCloseRef.current?.focus();
+    else if (navWasOpen.current) menuButtonRef.current?.focus();
+    navWasOpen.current = navOpen;
+  }, [navOpen]);
+
   const project = summary?.projects.find((candidate) =>
     location.pathname.startsWith(`/projects/${candidate.id}`),
   );
@@ -109,18 +152,51 @@ export function AppShell({
     ? displayNameFromEmail(userEmail)
     : (summary?.account.name ?? 'WorkerDeck');
   const userInitials = initialsFromLabel(userLabel);
+  const resourceCount = summary
+    ? Object.values(summary.resourceCounts).reduce((total, count) => total + count, 0)
+    : 0;
+  const nextTheme = resolvedTheme === 'light' ? 'dark' : 'light';
+  if (initialLocationKey.current === null) initialLocationKey.current = location.key;
+  const animateRoute = location.key !== initialLocationKey.current;
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem('workerdeck-sidebar', next ? 'collapsed' : 'expanded');
+      return next;
+    });
+  };
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${sidebarCollapsed ? ' app-shell--collapsed' : ''}`}>
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
       <div
         className={`sidebar-scrim${navOpen ? ' sidebar-scrim--open' : ''}`}
         aria-hidden="true"
         onClick={closeNavigation}
       />
-      <aside className={`sidebar${navOpen ? ' sidebar--open' : ''}`} id="app-navigation">
+      <aside
+        className={`sidebar${navOpen ? ' sidebar--open' : ''}`}
+        id="app-navigation"
+        inert={(compactNavigation && !navOpen) || undefined}
+        aria-hidden={compactNavigation && !navOpen ? true : undefined}
+      >
         <div className="sidebar-brand">
           <Brand />
+          <span className="version-badge">v0.1</span>
           <button
+            className="sidebar-collapse"
+            type="button"
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            onClick={toggleSidebar}
+          >
+            <DoubleAltArrowLeft size={17} />
+          </button>
+          <button
+            ref={drawerCloseRef}
             className="topbar-icon drawer-close"
             type="button"
             aria-label="Close navigation"
@@ -129,32 +205,44 @@ export function AppShell({
             <X size={18} />
           </button>
         </div>
-        <div className="workspace-switcher">
-          <span className="workspace-avatar">WD</span>
-          <span>
-            <strong>{summary?.account.name ?? 'WorkerDeck'}</strong>
-            <small>Cloudflare workspace</small>
-          </span>
-        </div>
         <nav className="primary-nav" aria-label="Primary navigation">
-          {primaryNavigation.map(({ label, to, icon: Icon }) => (
-            <NavLink key={to} to={to} end={to === '/'} aria-label={label} onClick={closeNavigation}>
-              <Icon size={18} strokeWidth={1.8} />
-              <span>{label}</span>
-              <i aria-hidden="true" />
-            </NavLink>
+          {navigationGroups.map((group) => (
+            <div className="nav-group" key={group.label}>
+              <p>{group.label}</p>
+              {group.items.map(({ label, to, icon: Icon, ...item }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={to === '/'}
+                  aria-label={label}
+                  title={sidebarCollapsed ? label : undefined}
+                  onClick={closeNavigation}
+                >
+                  <Icon size={17} strokeWidth={1.8} />
+                  <span>{label}</span>
+                  {'badge' in item && resourceCount > 0 ? (
+                    <b className="nav-count">{resourceCount}</b>
+                  ) : null}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
         <nav className="secondary-nav" aria-label="Account navigation">
-          <NavLink to="/usage" onClick={closeNavigation}>
-            <ChartNoAxesColumnIncreasing size={18} />
-            <span>Usage</span>
-          </NavLink>
-          <NavLink to="/settings" onClick={closeNavigation}>
-            <Settings size={18} />
-            <span>Settings</span>
-          </NavLink>
-          <a href="https://github.com/temidayoxyz/workerdeck" target="_blank" rel="noreferrer">
+          <button
+            className="sidebar-new-project"
+            type="button"
+            onClick={() => void navigate('/projects/new')}
+          >
+            <Plus size={17} />
+            <span>New project</span>
+          </button>
+          <a
+            href="https://github.com/temidayoxyz/workerdeck"
+            target="_blank"
+            rel="noreferrer"
+            title={sidebarCollapsed ? 'Documentation' : undefined}
+          >
             <CircleHelp size={18} />
             <span>Documentation</span>
           </a>
@@ -172,7 +260,7 @@ export function AppShell({
         </div>
       </aside>
 
-      <main className="main-area">
+      <main className="main-area" id="main-content" inert={navOpen || undefined}>
         <header className="topbar">
           <div className="topbar-brand">
             <Brand />
@@ -189,7 +277,7 @@ export function AppShell({
               aria-label="Search projects and deployments"
               onClick={() => setCommandOpen(true)}
             >
-              <Command size={16} />
+              <Search size={16} />
               <span>Search projects, deployments…</span>
               <kbd>⌘K</kbd>
             </button>
@@ -197,9 +285,10 @@ export function AppShell({
               className="topbar-icon"
               type="button"
               onClick={toggleTheme}
-              aria-label={`Use ${theme === 'dark' ? 'light' : 'dark'} theme`}
+              aria-label={`Theme: ${themeMode}. Switch to ${nextTheme} theme`}
+              title={`Theme: ${themeMode}. Switch to ${nextTheme}`}
             >
-              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+              <ThemeHalf size={18} />
             </button>
             <button
               className="button button--primary button--compact"
@@ -210,6 +299,7 @@ export function AppShell({
               New project
             </button>
             <button
+              ref={menuButtonRef}
               className="topbar-icon menu-button"
               type="button"
               aria-expanded={navOpen}
@@ -222,16 +312,21 @@ export function AppShell({
           </div>
         </header>
         <div className="page-frame">
-          <Outlet
-            context={
-              {
-                summary,
-                projectCreated: onProjectCreated,
-                projectDeleted: onProjectDeleted,
-                deploymentDeleted: onDeploymentDeleted,
-              } satisfies ShellContext
-            }
-          />
+          <div
+            className={`page-route${animateRoute ? ' page-route--enter' : ''}`}
+            key={location.key}
+          >
+            <Outlet
+              context={
+                {
+                  summary,
+                  projectCreated: onProjectCreated,
+                  projectDeleted: onProjectDeleted,
+                  deploymentDeleted: onDeploymentDeleted,
+                } satisfies ShellContext
+              }
+            />
+          </div>
         </div>
       </main>
 

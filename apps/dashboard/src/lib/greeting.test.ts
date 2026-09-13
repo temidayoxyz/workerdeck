@@ -27,4 +27,8 @@ describe('greetingForHour', () => {
   it('uses the local hour of the supplied date', () => {
     expect(greetingFor(new Date(2026, 7, 14, 8, 30))).toBe('Good morning.');
   });
+
+  it('personalizes the greeting when a name is available', () => {
+    expect(greetingForHour(14, 'Alex')).toBe('Good afternoon, Alex');
+  });
 });
